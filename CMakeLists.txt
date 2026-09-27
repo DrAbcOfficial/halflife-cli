@@ -24,6 +24,11 @@ endif()
 add_library(HalflifeCLI SHARED
 	src/plugins.cpp
 	src/exportfuncs.cpp
+	src/config.cpp
+	src/output_capture.cpp
+	src/console_bridge.cpp
+	src/rcon_server.cpp
+	src/window_manager.cpp
 	"${METAHOOKSV_DIR}/include/HLSDK/common/interface.cpp"
 )
 

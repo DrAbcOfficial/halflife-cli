@@ -13,8 +13,3 @@ IFileSystem_HL25* g_pFileSystem_HL25 = NULL;
 
 int g_iEngineType = 0;
 DWORD g_dwEngineBuildnum = 0;
-
-void HUD_Frame(double time)
-{
-	gExportfuncs.HUD_Frame(time);
-}
