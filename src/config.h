@@ -15,6 +15,7 @@ struct CliConfig
 	int developer = 1;                        // set the "developer" cvar so verbose engine output flows
 	int capture = 1;                          // capture console output via VGUI2Extension GameConsole callbacks
 	int console = 1;                          // 1 = full bridge, 2 = no stdin thread, 3 = no output sink, 0 = off
+	int console_topmost = 0;                  // keep the CLI console window always on top
 	int rcon = 1;                             // RCON server
 
 	bool Load();

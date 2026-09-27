@@ -113,6 +113,13 @@ namespace ConsoleBridge
 				freopen_s(&f, "CONIN$", "rb", stdin);
 				freopen_s(&f, "CONOUT$", "wb", stderr);
 				SetConsoleTitleA("halflife-cli");
+				// HWND_TOPMOST is a persistent z-order band, so setting it once
+				// here keeps the console above the game until something demotes
+				// it. Only for the console we just created — the piped-stdio
+				// path must not touch the parent's console window.
+				if (CLI_Config().console_topmost)
+					SetWindowPos(GetConsoleWindow(), HWND_TOPMOST, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE);
 				outOk = inOk = true;
 			}
 		}

@@ -73,6 +73,7 @@ bool CliConfig::Load()
 			else if (key == "developer") developer = atoi(value.c_str());
 			else if (key == "capture") capture = atoi(value.c_str());
 			else if (key == "console") console = atoi(value.c_str());
+			else if (key == "console_topmost") console_topmost = atoi(value.c_str());
 			else if (key == "rcon") rcon = atoi(value.c_str());
 		}
 	}
