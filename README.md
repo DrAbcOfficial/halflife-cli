@@ -37,7 +37,10 @@ with `--dir <path>`; when nothing is found, configure the path as above.
 - **stdin**: every line is executed as a game console command (`status`,
   `map osprey`, `snapshot`, `quit`, ...). Plugin commands: `cli.help`,
   `cli.rconinfo`, `cli.window <0|1|2>` (0=show, 1=off-screen default,
-  2=SW_HIDE; note SW_HIDE may pause rendering on some engines).
+  2=SW_HIDE; note SW_HIDE may pause rendering on some engines), and
+  `cli.find <name>` to check whether a cvar/command exists — when it does
+  not, up to 10 similar names (substring match or small edit distance) are
+  suggested, e.g. `cli.find abc` → `similar names: ab, ac, bc, c`.
 - **stdout mirror**: all captured console output is echoed live, including
   `Con_DPrintf` output when the engine routes it to the vgui console (the
   plugin sets `developer 1` by default so it does).

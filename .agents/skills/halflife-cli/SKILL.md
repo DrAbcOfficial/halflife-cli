@@ -113,8 +113,14 @@ This is your main observability channel.
 
 **Plugin commands** (alongside all normal game commands):
 `cli.help`, `cli.rconinfo` (current RCON endpoint), `cli.window <0|1|2>`
-(0=show, 1=off-screen default, 2=SW_HIDE). `cli.help` also doubles as a
-liveness probe — if its output comes back, the bridge works.
+(0=show, 1=off-screen default, 2=SW_HIDE), and `cli.find <name>` — check
+whether a cvar or console command exists before using it. On a hit it prints
+what it is and its value (passwords masked as `**`), e.g.
+`cli.find: "sv_cheats" exists (cvar, value "0")`; on a miss it prints up to
+10 similar names ranked by similarity (substring match or small edit
+distance), e.g. `cli.find: no cvar or command named "abc"` followed by
+`cli.find: similar names: ab, ac, bc, c`. Case-insensitive. `cli.help` also
+doubles as a liveness probe — if its output comes back, the bridge works.
 
 ## Seeing the game: screenshots for vision-capable agents
 
@@ -156,7 +162,9 @@ need to watch it.
 
 Useful console commands (send via RCON or stdin): `status`, `version`,
 `map <name>`, `echo <text>` (pipeline probe), cvars via `<name> <value>`, and
-`quit` for clean shutdown. Quit via RCON `quit` first; fall back to writing
+`quit` for clean shutdown. Verify a cvar/command name with `cli.find <name>`
+first — the engine silently ignores a typo'd command, and `cli.find` tells
+you the correct spelling instead. Quit via RCON `quit` first; fall back to writing
 `quit\n` to stdin if the socket path fails, then wait up to ~30 s for exit.
 
 Config lives in `<game>\svencoop\metahook\configs\halflifecli.ini` (all keys
