@@ -1,12 +1,10 @@
 # halflife-cli
 
 A [MetaHookSv](https://github.com/hzqst/MetaHookSv) plugin that turns
-Half-Life / Sven Co-op into a CLI-driven program for automated testing:
+Half-Life / Sven Co-op into a CLI-driven program for automated testing or agent operation:
 the game window is hidden (but alive, so `snapshot` keeps working), a CLI
 console is exposed, commands come in through stdin, and a Source RCON server
 runs on a random localhost port.
-
-Windows only, C++20, CMake (Win32/x86 — the game process is 32-bit).
 
 ## Build
 
@@ -18,18 +16,8 @@ cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
 cmake --build build --config Release
 ```
 
-The MetaHookSv submodule supplies the plugin ABI headers
-(`include/metahook.h`, `include/Interface/IPlugins.h`, HLSDK headers) and the
-`CreateInterface` glue (`include/HLSDK/common/interface.cpp`).
 
 ## Install
-
-Prerequisite: a working MetaHookSv install (latest `svencoop.exe` launcher,
-`svencoop\metahook\gamedata`, and a `plugins.lst`). The output-capture feature
-resolves `Con_Printf` / `Con_DPrintf` / `Con_Warning` through MetaHookSv
-gamedata symbols; without gamedata commands still run but output mirroring is
-disabled.
-
 ```bat
 scripts\install_plugin.bat            [optional: path to "Sven Co-op"]
 scripts\launch_cli.bat                [optional: extra launch args]
@@ -39,15 +27,6 @@ scripts\launch_cli.bat                [optional: extra launch args]
 windowed mode). Set `GAME_DIR` to override the install path.
 
 ## Using it
-
-On startup the plugin prints a banner, either into an inherited/piped console
-(automation) or into an allocated console window:
-
-```
-halflife-cli 2026-09-27T... loaded (engine: SVENGINE)
-halflife-cli: RCON listening on 127.0.0.1:53219 (password: none)
-```
-
 - **stdin**: every line is executed as a game console command (`status`,
   `map osprey`, `snapshot`, `quit`, ...). Plugin commands: `cli.help`,
   `cli.rconinfo`, `cli.window <0|1|2>` (0=show, 1=off-screen default,
@@ -75,38 +54,14 @@ hide_window=1          ; 0=off 1=off-screen (default) 2=SW_HIDE
 developer=1            ; set the developer cvar at startup
 ```
 
-## How it works
+## CI
 
-- `IPluginsV4` lifecycle: `LoadClient` overrides `HUD_Init` (register `cli.*`
-  commands) and `HUD_Frame` (per-frame pump), starts the console bridge and the
-  RCON server. Everything is re-entrancy guarded because `LoadClient` runs
-  again on every map change.
-- Commands are queued from stdin/RCON threads and executed on the engine
-  thread via `pfnClientCmd` (feeds the engine command buffer, i.e. identical
-  to typing), so they behave exactly like typed console input.
-- Console output capture: svengine routes all console text (command output,
-  engine prints, and the `cl_enginefunc_t` `Con_Printf` entry itself) through
-  ONE print function inside the engine module. The plugin locates it at
-  runtime by scanning for the "Unknown command" format string's cross-reference
-  (`push imm32` + `call`) and inline-hooks it; the `cl_enginefunc_t` `Con_Printf`
-  entry is hooked only as a fallback. `Con_DPrintf` is captured even when
-  `developer` is 0 (the suppression lives inside the original function, behind
-  the hook), and the plugin sets `developer 1` by default.
-- RCON responses pair a captured-output sequence range `[begin, next frame]`
-  with each command (5s timeout, 4096-byte body cap); commands whose output is
-  huge are truncated. `snapshot` writes to `svencoop\screenshots\*.bmp` without
-  a console message — check the directory instead.
-- Protocol layer and command layer are decoupled; recv loops read exactly the
-  announced sizes; packets are capped at 4096 body bytes; auth failure sends
-  `id = -1` and disconnects; connection cap 4.
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds the plugin
+on every push (`windows-latest`, Win32) and uploads the DLL as a workflow
+artifact. Pushing a `v*` tag additionally publishes a GitHub Release with
+`HalflifeCLI-<tag>.zip`:
 
-## Notes
-
-- The MetaHookSv submodule is pinned to an upstream commit; its build system
-  remains MSBuild-based and is used only when (re)building MetaHookSv itself
-  (`scripts/build-MetaHook.bat` inside the submodule). Building it with a VS
-  generator newer than the pinned toolset needs all projects on one toolset
-  (`-p:PlatformToolset=<latest>` on the MSBuild command line) and, with
-  CMake 4, a one-line patch in `thirdparty/capstone_fork/CMakeLists.txt`
-  (`if (POLICY CMP0048 ...)` must not fire on CMake >= 4).
-- `.zcode/`, `build/` and other local artifacts are git-ignored.
+```bat
+git tag v0.1.0
+git push origin v0.1.0
+```
