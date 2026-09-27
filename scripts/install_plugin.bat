@@ -5,7 +5,15 @@ setlocal
 
 set "RepoDir=%~dp0.."
 set "GameDir=%~1"
-if "%GameDir%"=="" set "GameDir=D:\SteamLibrary\steamapps\common\Sven Co-op"
+if "%GameDir%"=="" if defined GAME_DIR set "GameDir=%GAME_DIR%"
+if "%GameDir%"=="" if exist "%RepoDir%\scripts\game_dir.txt" set /p GameDir=<"%RepoDir%\scripts\game_dir.txt"
+if defined GameDir set "GameDir=%GameDir:"=%"
+if "%GameDir%"=="" (
+    echo ERROR: no game directory configured.
+    echo   Pass the path as the first argument, set GAME_DIR, or write the full
+    echo   path ^(one line^) into scripts\game_dir.txt. Try: python scripts\find_game.py
+    exit /b 1
+)
 set "PluginSrc=%RepoDir%\build\Release\HalflifeCLI.dll"
 set "PluginDst=%GameDir%\svencoop\metahook\plugins\HalflifeCLI.dll"
 set "PluginsLst=%GameDir%\svencoop\metahook\configs\plugins.lst"

@@ -5,6 +5,9 @@ Launches Sven Co-op with piped stdio (plugin CLI automation mode), waits for
 the RCON banner, then exercises the RCON path: auth, echo, a DPrintf-covered
 command, snapshot, and quit. Verifies the screenshot file appears.
 
+The game directory is resolved from --game, then GAME_DIR, then
+scripts/game_dir.txt (see find_game.py). There is no default path.
+
 Usage: python scripts/acceptance_test.py [--game "D:\\...\\Sven Co-op"]
 """
 
@@ -18,16 +21,15 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rcon_client
+from find_game import resolve_game_dir
 
-DEFAULT_GAME = r"D:\SteamLibrary\steamapps\common\Sven Co-op"
 BANNER_TIMEOUT = 120
 
 
 def parse_args():
-    game = DEFAULT_GAME
     if "--game" in sys.argv:
-        game = sys.argv[sys.argv.index("--game") + 1]
-    return game
+        return sys.argv[sys.argv.index("--game") + 1]
+    return None
 
 
 def read_stdout(proc, lines, evt):
@@ -42,7 +44,13 @@ def read_stdout(proc, lines, evt):
 
 
 def main():
-    game_dir = parse_args()
+    game_dir, info = resolve_game_dir(parse_args())
+    if not game_dir:
+        print(f"FAIL: no game directory resolved ({info}).")
+        print("Run scripts/find_game.py, set GAME_DIR, write scripts/game_dir.txt, "
+              "or pass --game <path>.")
+        return 1
+    print(f"[test] game dir: {game_dir} (source: {info})")
     exe = os.path.join(game_dir, "svencoop.exe")
     mod_dir = os.path.join(game_dir, "svencoop")
     if not os.path.exists(exe):

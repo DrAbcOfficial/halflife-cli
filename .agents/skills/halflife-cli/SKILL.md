@@ -1,0 +1,213 @@
+---
+name: halflife-cli
+description: Operate, automate, and debug Sven Co-op / Half-Life through the halflife-cli MetaHookSv plugin — piped-stdin console bridge, Source RCON server, and in-engine screenshots. Use whenever the task involves launching or driving the game headlessly, sending console commands (map, status, quit, cvars), capturing game screenshots via snapshot/screenshot for vision-based verification, connecting over RCON, or diagnosing why the plugin, the CLI bridge, or the game misbehaves — even if the user just says "take a screenshot of the game", "run the map", or "test the plugin".
+---
+
+# halflife-cli: drive Sven Co-op / Half-Life as a CLI program
+
+halflife-cli turns the game into a controllable process: the render window is
+hidden off-screen (still rendering, so screenshots keep working), every stdin
+line is executed as a console command, all console output is mirrored to
+stdout, and a Source RCON server listens on a random localhost port.
+
+## Paths you will need
+
+| What | Where |
+|---|---|
+| Game install | resolved externally — see "Resolve the game directory first"; a valid install contains `svencoop.exe` |
+| Mod dir | `<game>\svencoop` |
+| Screenshots | `<game>\svencoop\screenshots\*.bmp` |
+| RCON port file | `<game>\svencoop\metahook\configs\halflifecli.port` |
+| Config file | `<game>\svencoop\metahook\configs\halflifecli.ini` |
+| Game dir config | `<repo>\scripts\game_dir.txt` (one line, machine-local, gitignored) |
+| RCON client / acceptance test / locator | `scripts\rcon_client.py`, `scripts\acceptance_test.py`, `scripts\find_game.py` in this repo |
+
+## Resolve the game directory first
+
+No install path is hardcoded anywhere in this project. Resolve it at the start
+of every task, before launching the game or running any script:
+
+1. If the user already gave the path in this conversation, use it.
+2. Otherwise run `python scripts\find_game.py`. It checks `GAME_DIR` and
+   `scripts\game_dir.txt` first, then searches (Steam registry →
+   `steamapps\libraryfolders.vdf` libraries → common install layouts) and
+   prints the first directory containing `svencoop.exe`. Pass `--dir <path>`
+   to merely validate a candidate.
+3. If it exits non-zero, ask the user for the install path — do not guess.
+   Then:
+   - Verify the answer: the directory must contain `svencoop.exe` (and
+     `svencoop\metahook\` if the plugin still needs installing).
+   - Persist it as a single line in `scripts\game_dir.txt` so later sessions
+     never need to ask again:
+
+     ```bat
+     echo C:\Program Files (x86)\Steam\steamapps\common\Sven Co-op>"<repo>\scripts\game_dir.txt"
+     ```
+
+Every script and snippet in this skill takes the game directory from that
+resolution chain — never invent a default location.
+
+## Launch and discover
+
+Automation harnesses must launch `svencoop.exe` directly with piped stdio (the
+way `scripts/acceptance_test.py` does), with `game_dir` resolved as above. Do
+not use `launch_cli.bat` for piping — it uses `start`, which detaches the
+console.
+
+```python
+proc = subprocess.Popen(
+    [os.path.join(game_dir, "svencoop.exe"), "-windowed", "-novid"],
+    cwd=game_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+```
+
+`-windowed` is mandatory (off-screen hiding requires windowed mode) and
+`-novid` skips the intro. The plugin enforces nothing on your behalf here —
+always pass both.
+
+Then read stdout until you see the banner (allow up to ~120 s for game start):
+
+```
+halflife-cli: RCON listening on 127.0.0.1:54321 (password: none|set)
+```
+
+The same port is written to `metahook/configs/halflifecli.port` (decimal port +
+newline). The port file may be stale from a previous run — prefer the banner,
+or re-read the file only after the banner appears.
+
+## Control channels
+
+**RCON (preferred for request/response).** Standard Source RCON protocol over
+TCP; responses are synchronous, one response per command, body capped at 4096
+bytes. From this repo:
+
+```bat
+python scripts\rcon_client.py 127.0.0.1 54321 "" "status" "echo hello"
+```
+
+Or in Python: `sys.path.insert(0, "<repo>/scripts"); import rcon_client`, then
+`rcon_client.connect(sock, host, port, password)` and
+`rcon_client.run_command(sock, rid, command)`.
+
+- Empty configured password accepts any auth; a wrong password against a set
+  password gets `rid=-1` and the connection is closed on the first strike —
+  reconnect fresh rather than reusing the socket.
+- A response of `[halflife-cli] timed out waiting for command output` means the
+  engine did not produce output within 5 s (usually still loading or paused) —
+  retry after waiting.
+- An empty response body is normal for commands that print nothing (e.g. a
+  successful `map`); it is not an error.
+- Up to 4 concurrent connections are accepted; bind is localhost-only by
+  default.
+
+**stdin (fire-and-forget).** Every line piped to stdin is queued and executed
+on the next frame. There is no per-command response framing on stdin — output
+simply appears interleaved on stdout. Use RCON when you need the answer to a
+specific command; use stdin for one-way pushes.
+
+**stdout mirror.** All captured console output is echoed live, including
+`Con_DPrintf` output (captured even when `developer` is 0; the plugin sets
+`developer 1` by default). This is your main observability channel.
+
+**Plugin commands** (alongside all normal game commands):
+`cli.help`, `cli.rconinfo` (current RCON endpoint), `cli.window <0|1|2>`
+(0=show, 1=off-screen default, 2=SW_HIDE). `cli.help` also doubles as a
+liveness probe — if its output comes back, the bridge works.
+
+## Seeing the game: screenshots for vision-capable agents
+
+If you can read images, capture and view the game like this:
+
+1. Make sure a map is loaded and rendering. From a fresh start send
+   `map osprey` (or any small map) and wait for the load — the acceptance test
+   allows ~25 s after `map` before shooting. A snapshot at the main menu shows
+   the menu, not the game.
+2. Send `snapshot` (the engine's BMP screenshot command). `screenshot` is also
+   accepted by the engine and writes to the same directory, possibly in a
+   different format — locate results by filename, not assumed extension.
+3. Wait 1–2 s, then find the newest file by modification time:
+
+```python
+import glob, os
+shots = glob.glob(os.path.join(game_dir, "svencoop", "screenshots", "*.bmp"))
+newest = max(shots, key=os.path.getmtime)
+```
+
+4. BMP is not readable by every harness. Convert to PNG (no dependencies,
+   Windows PowerShell):
+
+```powershell
+Add-Type -AssemblyName System.Drawing
+[System.Drawing.Image]::FromFile("$bmp").Save("$png", [System.Drawing.Imaging.ImageFormat]::Png)
+```
+
+   or Python: `from PIL import Image; Image.open(bmp).save(png)`.
+5. Read the PNG with your image tool and reason about the frame.
+
+The window is hidden off-screen (mode 1) yet still rendered by the OS, so
+snapshots work with no visible window. Do not switch to `cli.window 2`
+(SW_HIDE) for capture — some engines pause rendering when fully hidden and
+snapshots stop updating. `cli.window 0` restores the window on screen if you
+need to watch it.
+
+## Operating the game
+
+Useful console commands (send via RCON or stdin): `status`, `version`,
+`map <name>`, `echo <text>` (pipeline probe), cvars via `<name> <value>`, and
+`quit` for clean shutdown. Quit via RCON `quit` first; fall back to writing
+`quit\n` to stdin if the socket path fails, then wait up to ~30 s for exit.
+
+Config lives in `<game>\svencoop\metahook\configs\halflifecli.ini` (all keys
+optional):
+
+```ini
+[rcon]
+port=0                 ; 0 = random available port
+bind=127.0.0.1
+password=              ; empty = accept any auth
+allowed_ips=
+
+[cli]
+hide_window=1          ; 0=off 1=off-screen (default) 2=SW_HIDE
+developer=1
+```
+
+Build and install from the repo root:
+
+```bat
+cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
+cmake --build build --config Release
+scripts\install_plugin.bat              ; optional arg: game dir
+```
+
+The build must be Win32 (x86) — the game is a 32-bit process; an x64 DLL will
+not load. `install_plugin.bat` copies the DLL into
+`svencoop\metahook\plugins\` and appends it to `plugins.lst` once.
+
+## Debugging: symptoms → causes → fixes
+
+Run the full end-to-end check first, with the game directory resolved:
+`python scripts\acceptance_test.py` (pass `--game <path>` to override). It
+exercises auth (wrong and right password), echo, version, `map` + `snapshot`
+file appearance, and clean quit.
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `no game directory resolved` | nothing configured and the search found nothing | Ask the user for the path; verify and persist it (see "Resolve the game directory first") |
+|---|---|---|
+| No RCON banner within ~120 s | Plugin not loaded: missing DLL, x64 build, or not listed in `plugins.lst` | Check stdout for `halflife-cli ... loaded`; rebuild Win32; re-run `install_plugin.bat` |
+| `RCON failed to start (bind failed ...)` | Port conflict | Set a fixed `[rcon] port` in the ini, or kill the process holding it |
+| `warning: Con_Printf capture unavailable, output mirroring disabled` | Output hooks failed to install | Commands still run; RCON replies come back EMPTY. Expect degraded observability; report if capture is essential |
+| RCON auth fails immediately | Password mismatch | Check the ini; note one-strike disconnect — open a fresh connection |
+| Response is `timed out waiting for command output` | Engine busy (loading, paused) | Wait and resend; lengthen the wait after `map` |
+| Snapshot file never appears | No map loaded, or window fully hidden (`cli.window 2`) pausing render | Load a map and wait; use off-screen mode 1; wait 1–2 s after the command |
+| Port file disagrees with banner | Stale file from a previous run | Trust the banner; the file is refreshed at startup |
+| Game ignores stdin commands | stdin not actually piped (launched via `start`/bat) | Launch `svencoop.exe` directly with piped stdio, as in the acceptance test |
+| Game does not exit after `quit` | RCON path broken | Send `quit\n` on stdin as fallback, wait ~30 s, then kill as last resort |
+
+Source map, for code-level debugging: `src/plugins.cpp` (lifecycle, banner,
+`cli.*` commands), `src/console_bridge.cpp` (stdin queue, command pump, RCON
+response assembly — responses complete on the frame after execution),
+`src/output_capture.cpp` (Con_Printf/Con_DPrintf/console-print hooks),
+`src/rcon_server.cpp` (protocol, auth, limits), `src/window_manager.cpp`
+(hide modes), `src/config.cpp` (ini parsing), `scripts/acceptance_test.py`
+(reference automation harness).

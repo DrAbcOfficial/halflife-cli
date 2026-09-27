@@ -15,6 +15,9 @@ Win32/
 *.port
 *.log
 
+# Machine-local game directory config (see scripts/find_game.py)
+scripts/game_dir.txt
+
 # OS
 Thumbs.db
 Desktop.ini

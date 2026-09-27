@@ -3,11 +3,18 @@
 :: -windowed -novid are ALWAYS enforced: the plugin hides the render window
 :: (off-screen), which requires windowed mode, and -novid skips the intro movie.
 :: Usage: scripts\launch_cli.bat [extra launch args...]
-:: Override the install location with: set GAME_DIR=D:\path\to\Sven Co-op
+:: Game dir comes from GAME_DIR or scripts\game_dir.txt (see scripts\find_game.py).
 setlocal
 
 set "GameDir=%GAME_DIR%"
-if "%GameDir%"=="" set "GameDir=D:\SteamLibrary\steamapps\common\Sven Co-op"
+if "%GameDir%"=="" if exist "%~dp0game_dir.txt" set /p GameDir=<"%~dp0game_dir.txt"
+if defined GameDir set "GameDir=%GameDir:"=%"
+if "%GameDir%"=="" (
+    echo ERROR: no game directory configured.
+    echo   set GAME_DIR or write the full path ^(one line^) into scripts\game_dir.txt.
+    echo   Try: python scripts\find_game.py
+    exit /b 1
+)
 if not exist "%GameDir%\svencoop.exe" (
     echo ERROR: svencoop.exe not found under "%GameDir%"
     exit /b 1

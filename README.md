@@ -24,7 +24,14 @@ scripts\launch_cli.bat                [optional: extra launch args]
 ```
 
 `launch_cli.bat` always enforces `-windowed -novid` (off-screen hiding needs
-windowed mode). Set `GAME_DIR` to override the install path.
+windowed mode).
+
+No game path is hardcoded: scripts resolve the game directory from (in order)
+their command-line argument, the `GAME_DIR` environment variable, and
+`scripts\game_dir.txt` (one line, machine-local, gitignored). Run
+`python scripts\find_game.py` to locate the install automatically (Steam
+registry, `libraryfolders.vdf`, common layouts) or to validate a candidate
+with `--dir <path>`; when nothing is found, configure the path as above.
 
 ## Using it
 - **stdin**: every line is executed as a game console command (`status`,
