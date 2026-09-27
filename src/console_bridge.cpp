@@ -48,14 +48,6 @@ namespace
 	};
 	BridgeState g_bridge;
 
-	// pfnClientCmd feeds the engine command buffer (it is ClientCmd ->
-	// Cbuf_AddText internally), so typed-console semantics are preserved even
-	// without symbol resolution. The svencoop gamedata catalog does not carry
-	// Cbuf_AddText, so ResolveGameSymbol is only a best-effort upgrade.
-	typedef void (*Cbuf_AddText_t)(const char *text);
-	Cbuf_AddText_t g_pfnCbufAddText = nullptr;
-	bool g_cbufTried = false;
-
 	void WriteOutLocked(const std::string& text)
 	{
 		if (!g_bridge.hasRealConsole)
@@ -176,29 +168,16 @@ namespace ConsoleBridge
 
 	static void ExecuteCommand(const std::string& cmd)
 	{
-		if (g_pfnCbufAddText)
-		{
-			g_pfnCbufAddText((cmd + "\n").c_str());
-		}
-		else
-		{
-			// explicit newline: svengine's ClientCmd may not terminate the line
-			gEngfuncs.pfnClientCmd((cmd + "\n").c_str());
-		}
+		// clientcommand path only: pfnClientCmd is a stable cl_enginefunc_t
+		// entry feeding the engine command buffer, with typed-console
+		// semantics. Resolving Cbuf_AddText from the engine by symbol/pattern
+		// is build-dependent and deliberately not used. The explicit newline
+		// is needed because svengine's ClientCmd may not terminate the line.
+		gEngfuncs.pfnClientCmd((cmd + "\n").c_str());
 	}
 
 	void PumpCommands()
 	{
-		// resolve Cbuf_AddText once (best effort)
-		if (!g_pfnCbufAddText && !g_cbufTried)
-		{
-			g_cbufTried = true;
-			PVOID p = nullptr;
-			if (g_pMetaHookAPI->ResolveGameSymbol(g_pMetaHookAPI->GetEngineBase(), "Cbuf_AddText",
-				MH_GAMESYMBOL_KIND_FUNCTION, &p) == MH_GAMESYMBOL_OK && p)
-				g_pfnCbufAddText = (Cbuf_AddText_t)p;
-		}
-
 		// finalize responses from earlier frames
 		{
 			std::lock_guard<std::mutex> respLock(g_bridge.respMutex);

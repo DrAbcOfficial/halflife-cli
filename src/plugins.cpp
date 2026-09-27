@@ -43,6 +43,12 @@ void IPluginsV4::LoadEngine(cl_enginefunc_t *pEngfuncs)
 	memcpy(&gEngfuncs, pEngfuncs, sizeof(gEngfuncs));
 
 	CLI_Config().Load();
+
+	// Console capture registers with the VGUI2Extension plugin (its factory
+	// is up as soon as all plugin DLLs are loaded), so it can happen here in
+	// LoadEngine — no engine module scanning needed.
+	if (CLI_Config().capture)
+		OutputCapture::Install();
 }
 
 void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
@@ -53,21 +59,16 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	pExportFunc->HUD_Frame = HUD_Frame;
 
 	CLI_Config().Load();
-	// Install output capture here rather than LoadEngine: the engine
-	// filesystem backing gamedata/config access is not ready in LoadEngine,
-	// and symbol resolution needs the engine module fully loaded anyway.
-	if (CLI_Config().capture)
-	{
-		bool ok = OutputCapture::Install();
-		if (!ok)
-		{
-			// Commands still run; only the output mirroring is lost.
-			ConsoleBridge::WriteOut("[halflife-cli] warning: Con_Printf capture unavailable, output mirroring disabled");
-		}
-	}
 	if (CLI_Config().console)
 	{
 		ConsoleBridge::Init();
+	}
+	// Report capture failure only after ConsoleBridge::Init: stdout is wired
+	// up there, earlier WriteOut calls would be dropped.
+	if (CLI_Config().capture && !OutputCapture::Available())
+	{
+		// Commands still run; only the output mirroring is lost.
+		ConsoleBridge::WriteOut("[halflife-cli] warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled");
 	}
 	if (CLI_Config().hide_window)
 	{

@@ -38,11 +38,16 @@ target_include_directories(HalflifeCLI PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src
 	${METAHOOKSV_DIR}/include
 	${METAHOOKSV_DIR}/include/Interface
+	${METAHOOKSV_DIR}/include/Interface/VGUI
 	${METAHOOKSV_DIR}/include/HLSDK/common
 	${METAHOOKSV_DIR}/include/HLSDK/engine
 	${METAHOOKSV_DIR}/include/HLSDK/cl_dll
 	${METAHOOKSV_DIR}/include/HLSDK/pm_shared
 	${METAHOOKSV_DIR}/include/HLSDK/public
+	${METAHOOKSV_DIR}/include/VGUI
+	${METAHOOKSV_DIR}/include/SourceSDK
+	${METAHOOKSV_DIR}/include/SourceSDK/tier0
+	${METAHOOKSV_DIR}/include/SourceSDK/tier1
 )
 
 if(MSVC)

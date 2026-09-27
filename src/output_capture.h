@@ -4,14 +4,17 @@
 #include <string>
 #include <vector>
 
-// Captures engine console output by inline-hooking Con_Printf / Con_DPrintf /
-// Con_Warning. Con_DPrintf is captured even when the "developer" cvar is 0
-// (the suppression check lives inside the original function, behind our hook),
-// which is exactly what automated testing needs.
+// Captures engine console output through the VGUI2Extension plugin's
+// GameConsole callbacks (the IGameConsole "GameConsole003" Printf/DPrintf
+// path the on-screen vgui console itself uses). VGUI2Extension.dll is a hard
+// dependency — there is no fallback engine hooking. Con_DPrintf output only
+// reaches the vgui console when the engine routes it there, so keep
+// `developer` >= 1 (the plugin sets developer 1 by default) to see it.
 namespace OutputCapture
 {
-	// Resolves and hooks the engine print functions. Returns true when at least
-	// Con_Printf was hooked; false means output capture is unavailable.
+	// Registers the GameConsole callbacks with VGUI2Extension. Returns true
+	// when registered; false means VGUI2Extension.dll (or its interface) is
+	// missing and output capture is unavailable.
 	bool Install();
 
 	void Shutdown();
@@ -27,6 +30,6 @@ namespace OutputCapture
 	using LineSink = void (*)(const std::string& line);
 	void SetSink(LineSink sink);
 
-	// Are we hooked at all?
+	// Are we registered with VGUI2Extension?
 	bool Available();
 }

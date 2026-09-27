@@ -39,11 +39,21 @@ with `--dir <path>`; when nothing is found, configure the path as above.
   `cli.rconinfo`, `cli.window <0|1|2>` (0=show, 1=off-screen default,
   2=SW_HIDE; note SW_HIDE may pause rendering on some engines).
 - **stdout mirror**: all captured console output is echoed live, including
-  `Con_DPrintf` output (captured even when `developer` is 0; the plugin also
-  sets `developer 1` by default so the in-game console shows it too).
+  `Con_DPrintf` output when the engine routes it to the vgui console (the
+  plugin sets `developer 1` by default so it does).
 - **RCON**: `scripts/rcon_client.py <host> <port> <password> "cmd" ...` or any
   standard Source RCON client. The bound port is written to
   `svencoop\metahook\configs\halflifecli.port` for discovery.
+
+## Dependencies
+
+`VGUI2Extension.dll` (from
+[MetaHookSv](https://github.com/hzqst/MetaHookSv)) must be installed in
+`svencoop\metahook\plugins\` and listed in `plugins.lst`: console output is
+captured through its GameConsole interface callbacks and commands are executed
+through the engine's client command entry, so no engine code is hooked
+directly. `install_plugin.bat` ensures `VGUI2Extension.dll` is listed first in
+`plugins.lst` and warns when the DLL itself is missing.
 
 ## Configuration
 

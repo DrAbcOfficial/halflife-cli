@@ -105,8 +105,11 @@ simply appears interleaved on stdout. Use RCON when you need the answer to a
 specific command; use stdin for one-way pushes.
 
 **stdout mirror.** All captured console output is echoed live, including
-`Con_DPrintf` output (captured even when `developer` is 0; the plugin sets
-`developer 1` by default). This is your main observability channel.
+`Con_DPrintf` output when the engine routes it to the vgui console (the
+plugin sets `developer 1` by default so it does). Capture rides the
+VGUI2Extension plugin's GameConsole interface callbacks — `VGUI2Extension.dll`
+must be installed and listed in `plugins.lst` (the installer ensures both).
+This is your main observability channel.
 
 **Plugin commands** (alongside all normal game commands):
 `cli.help`, `cli.rconinfo` (current RCON endpoint), `cli.window <0|1|2>`
@@ -181,7 +184,9 @@ scripts\install_plugin.bat              ; optional arg: game dir
 
 The build must be Win32 (x86) — the game is a 32-bit process; an x64 DLL will
 not load. `install_plugin.bat` copies the DLL into
-`svencoop\metahook\plugins\` and appends it to `plugins.lst` once.
+`svencoop\metahook\plugins\`, appends it to `plugins.lst` once, and ensures
+`VGUI2Extension.dll` is installed and listed first (console capture depends
+on its GameConsole callbacks).
 
 ## Debugging: symptoms → causes → fixes
 
@@ -196,7 +201,7 @@ file appearance, and clean quit.
 |---|---|---|
 | No RCON banner within ~120 s | Plugin not loaded: missing DLL, x64 build, or not listed in `plugins.lst` | Check stdout for `halflife-cli ... loaded`; rebuild Win32; re-run `install_plugin.bat` |
 | `RCON failed to start (bind failed ...)` | Port conflict | Set a fixed `[rcon] port` in the ini, or kill the process holding it |
-| `warning: Con_Printf capture unavailable, output mirroring disabled` | Output hooks failed to install | Commands still run; RCON replies come back EMPTY. Expect degraded observability; report if capture is essential |
+| `warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled` | VGUI2Extension.dll not installed or not listed in `plugins.lst` (console capture depends on it) | Commands still run; RCON replies come back EMPTY. Install VGUI2Extension.dll into `svencoop\metahook\plugins\` (re-run `install_plugin.bat`, which also adds it to `plugins.lst`) |
 | RCON auth fails immediately | Password mismatch | Check the ini; note one-strike disconnect — open a fresh connection |
 | Response is `timed out waiting for command output` | Engine busy (loading, paused) | Wait and resend; lengthen the wait after `map` |
 | Snapshot file never appears | No map loaded, or window fully hidden (`cli.window 2`) pausing render | Load a map and wait; use off-screen mode 1; wait 1–2 s after the command |
@@ -205,9 +210,10 @@ file appearance, and clean quit.
 | Game does not exit after `quit` | RCON path broken | Send `quit\n` on stdin as fallback, wait ~30 s, then kill as last resort |
 
 Source map, for code-level debugging: `src/plugins.cpp` (lifecycle, banner,
-`cli.*` commands), `src/console_bridge.cpp` (stdin queue, command pump, RCON
-response assembly — responses complete on the frame after execution),
-`src/output_capture.cpp` (Con_Printf/Con_DPrintf/console-print hooks),
+`cli.*` commands), `src/console_bridge.cpp` (stdin queue, command pump via
+`pfnClientCmd`, RCON response assembly — responses complete on the frame
+after execution), `src/output_capture.cpp` (console capture via VGUI2Extension
+GameConsole callbacks; no engine code hooks),
 `src/rcon_server.cpp` (protocol, auth, limits), `src/window_manager.cpp`
 (hide modes), `src/config.cpp` (ini parsing), `scripts/acceptance_test.py`
 (reference automation harness).
