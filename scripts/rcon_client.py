@@ -78,7 +78,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 5:
         print(__doc__)
         sys.exit(2)
-    host, port_str, password = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+    host, port, password = sys.argv[1], int(sys.argv[2]), sys.argv[3]
     commands = sys.argv[4:]
 
     sock = socket.create_connection((host, port), timeout=10)
