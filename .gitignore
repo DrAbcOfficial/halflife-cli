@@ -1,0 +1,20 @@
+# ZCode workspace
+.zcode/
+
+# Build output
+build/
+out/
+output/
+x64/
+Win32/
+*.user
+*.suo
+.vs/
+
+# Runtime artifacts produced by the plugin in repo dir
+*.port
+*.log
+
+# OS
+Thumbs.db
+Desktop.ini
