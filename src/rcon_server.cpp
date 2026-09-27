@@ -118,6 +118,13 @@ namespace
 			std::string output;
 			if (!ConsoleBridge::WaitForResponse(token, output, RESPONSE_TIMEOUT_MS))
 				output = "[halflife-cli] timed out waiting for command output";
+			// keep responses within the conventional 4096-byte body limit
+			static const char truncNote[] = "\n[halflife-cli] output truncated";
+			if (output.size() > 4096)
+			{
+				output.resize(4096 - (sizeof(truncNote) - 1));
+				output += truncNote;
+			}
 			return SendPacket(sock, id, SERVERDATA_RESPONSE_VALUE, output);
 		}
 
@@ -188,6 +195,14 @@ namespace RconServer
 	{
 		StartResult result;
 
+		// LoadClient runs again on every map change; keep the live listener.
+		if (g_running)
+		{
+			result.ok = true;
+			result.port = g_port.load();
+			return result;
+		}
+
 		WSADATA wsa;
 		if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
 		{
@@ -245,7 +260,10 @@ namespace RconServer
 			std::string item = allowedIps.substr(pos, comma - pos);
 			while (!item.empty() && (item.front() == ' ' || item.front() == '\t')) item.erase(item.begin());
 			while (!item.empty() && (item.back() == ' ' || item.back() == '\t')) item.pop_back();
-			g_allowedIps.push_back(item);
+			// An empty configured list must stay empty: pushing "" here would
+			// turn IpAllowed into "deny everything".
+			if (!item.empty())
+				g_allowedIps.push_back(item);
 			pos = comma + 1;
 		}
 

@@ -1,4 +1,5 @@
 #include "console_bridge.h"
+#include "config.h"
 #include "output_capture.h"
 #include "plugins.h"
 
@@ -47,10 +48,13 @@ namespace
 	};
 	BridgeState g_bridge;
 
-	// Resolved once; feeding Cbuf_AddText matches typing into the game console
-	// exactly (server commands on a listen server included).
+	// pfnClientCmd feeds the engine command buffer (it is ClientCmd ->
+	// Cbuf_AddText internally), so typed-console semantics are preserved even
+	// without symbol resolution. The svencoop gamedata catalog does not carry
+	// Cbuf_AddText, so ResolveGameSymbol is only a best-effort upgrade.
 	typedef void (*Cbuf_AddText_t)(const char *text);
 	Cbuf_AddText_t g_pfnCbufAddText = nullptr;
+	bool g_cbufTried = false;
 
 	void WriteOutLocked(const std::string& text)
 	{
@@ -94,7 +98,9 @@ namespace ConsoleBridge
 
 	void Init()
 	{
-		g_bridge.running = true;
+		// LoadClient runs again on every map change; init only once.
+		if (g_bridge.running.exchange(true))
+			return;
 
 		// If the process already has usable std handles (launched from a
 		// terminal or with piped stdio by a test harness) use them as-is;
@@ -119,8 +125,8 @@ namespace ConsoleBridge
 			}
 		}
 
-		if (outOk)
-			setvbuf(stdout, nullptr, _IOLBF, 0);
+		// NOTE: no setvbuf here — calling setvbuf on the GUI process's stdout
+		// fast-fails (0xC0000409); WriteOutLocked flushes per line instead.
 
 		// stdout may be writable while stdin is not (RCON-only mode); the
 		// reader thread only starts when stdin is usable.
@@ -176,15 +182,17 @@ namespace ConsoleBridge
 		}
 		else
 		{
-			gEngfuncs.pfnClientCmd(cmd.c_str());
+			// explicit newline: svengine's ClientCmd may not terminate the line
+			gEngfuncs.pfnClientCmd((cmd + "\n").c_str());
 		}
 	}
 
 	void PumpCommands()
 	{
-		// resolve Cbuf_AddText lazily (engine base available from LoadEngine on)
-		if (!g_pfnCbufAddText)
+		// resolve Cbuf_AddText once (best effort)
+		if (!g_pfnCbufAddText && !g_cbufTried)
 		{
+			g_cbufTried = true;
 			PVOID p = nullptr;
 			if (g_pMetaHookAPI->ResolveGameSymbol(g_pMetaHookAPI->GetEngineBase(), "Cbuf_AddText",
 				MH_GAMESYMBOL_KIND_FUNCTION, &p) == MH_GAMESYMBOL_OK && p)
@@ -208,6 +216,14 @@ namespace ConsoleBridge
 						if (i) text += '\n';
 						text += lines[i];
 					}
+					if (text.empty())
+					{
+						char tbuf[160];
+						_snprintf_s(tbuf, sizeof(tbuf), _TRUNCATE,
+							"pump:token=%llu begin=%llu end=%llu EMPTY",
+							(unsigned long long)p.token,
+							(unsigned long long)p.beginSeq, (unsigned long long)end);
+									}
 					g_bridge.completed[p.token] = std::move(text);
 				}
 				else

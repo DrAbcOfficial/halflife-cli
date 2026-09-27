@@ -10,11 +10,9 @@ typedef void (*Con_Printf_t)(const char *fmt, ...);
 
 static Con_Printf_t g_pfnOrigConPrintf = nullptr;
 static Con_Printf_t g_pfnOrigConDPrintf = nullptr;
-static Con_Printf_t g_pfnOrigConWarning = nullptr;
 
 static hook_t *g_hookConPrintf = nullptr;
 static hook_t *g_hookConDPrintf = nullptr;
-static hook_t *g_hookConWarning = nullptr;
 
 	struct CaptureState
 	{
@@ -74,100 +72,144 @@ static void OnText(const char *text)
 	}
 }
 
-static void FormatAndForward(Con_Printf_t original, const char *fmt, va_list args)
-{
-	char buf[16384];
-	int n = _vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
-	if (n < 0)
-		n = sizeof(buf) - 1;
-	// The original function is variadic; forward the fully formatted text so
-	// the engine prints exactly what it intended.
-	original("%s", buf);
-}
-
 static void Hook_Con_Printf(const char *fmt, ...)
 {
+	char buf[16384];
 	va_list args;
 	va_start(args, fmt);
-	{
-		char buf[16384];
-		_vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
-		OnText(buf);
-	}
+	_vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
 	va_end(args);
-	FormatAndForward(g_pfnOrigConPrintf, fmt, args);
+	OnText(buf);
+	// The original is variadic and cannot be forwarded a va_list; the text is
+	// already fully formatted here, so hand it over as "%s".
+	g_pfnOrigConPrintf("%s", buf);
 }
 
 static void Hook_Con_DPrintf(const char *fmt, ...)
 {
+	char buf[16384];
 	va_list args;
 	va_start(args, fmt);
-	{
-		char buf[16384];
-		_vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
-		OnText(buf);
-	}
+	_vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
 	va_end(args);
-	FormatAndForward(g_pfnOrigConDPrintf, fmt, args);
+	OnText(buf);
+	g_pfnOrigConDPrintf("%s", buf);
 }
 
-static void Hook_Con_Warning(const char *fmt, ...)
+// svengine routes command-handler output (echo/version/cmdlist/unknown-command
+// ...) through a second print function, not the cl_enginefunc_t Con_Printf
+// entry. Located at runtime via the "Unknown command" format string xref.
+static Con_Printf_t g_pfnOrigConsolePrint = nullptr;
+static hook_t *g_hookConsolePrint = nullptr;
+
+static void Hook_ConsolePrint(const char *fmt, ...)
 {
+	char buf[16384];
 	va_list args;
 	va_start(args, fmt);
-	{
-		char buf[16384];
-		_vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
-		OnText(buf);
-	}
+	_vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
 	va_end(args);
-	FormatAndForward(g_pfnOrigConWarning, fmt, args);
+	OnText(buf);
+	g_pfnOrigConsolePrint("%s", buf);
+}
+
+static bool InstallConsolePrintHook()
+{
+	PVOID base = g_pMetaHookAPI->GetEngineBase();
+	DWORD size = g_pMetaHookAPI->GetEngineSize();
+	if (!base || !size)
+		return false;
+
+	static const char probeStr[] = "Unknown command: '%c'";
+	const BYTE *strAddr = (const BYTE *)g_pMetaHookAPI->SearchPattern(
+		base, size, probeStr, sizeof(probeStr) - 1);
+	if (!strAddr)
+		return false;
+
+	// scan .text for `push imm32 <strAddr>` followed by a near call
+	const BYTE imm[4] = {
+		(BYTE)((uintptr_t)strAddr >> 0),
+		(BYTE)((uintptr_t)strAddr >> 8),
+		(BYTE)((uintptr_t)strAddr >> 16),
+		(BYTE)((uintptr_t)strAddr >> 24),
+	};
+	const BYTE mask[4] = { 1, 1, 1, 1 };
+
+	uintptr_t textStart = (uintptr_t)base;
+	uintptr_t textEnd = textStart + size;
+	uintptr_t offset = textStart;
+	while (offset < textEnd - 5)
+	{
+		BYTE hit[4];
+		const BYTE *found = (const BYTE *)g_pMetaHookAPI->SearchPatternMasked(
+			(void *)offset, (DWORD)(textEnd - offset), imm, mask, 4);
+		if (!found)
+			break;
+
+		if (found[-1] == 0x68) // push imm32
+		{
+			for (const BYTE *p = found + 4; p < found + 4 + 64 && p < (const BYTE *)textEnd - 5; ++p)
+			{
+				if (*p == 0xE8)
+				{
+					int32_t rel = *(const int32_t *)(p + 1);
+					uintptr_t target = (uintptr_t)(p + 5) + rel;
+					if (target > textStart && target < textEnd)
+					{
+						g_hookConsolePrint = g_pMetaHookAPI->InlineHook(
+							(PVOID)target, Hook_ConsolePrint, (void **)&g_pfnOrigConsolePrint);
+						return g_hookConsolePrint != nullptr;
+					}
+				}
+			}
+		}
+		offset = (uintptr_t)found + 1;
+	}
+	return false;
 }
 
 namespace OutputCapture
 {
 	bool Install()
 	{
-		if (g_pfnOrigConPrintf)
+		if (g_hookConsolePrint || g_hookConPrintf)
 			return true;
 
-		PVOID addr = nullptr;
-		auto resolve = [&](const char *name) -> PVOID
+		// svengine routes all console text (command output, engine prints, and
+		// the cl_enginefunc_t Con_Printf entry itself, which forwards here)
+		// through one print function. It is located at runtime via the
+		// "Unknown command" format string xref: the svencoop gamedata catalog
+		// carries no Con_* symbols, and hooking the table entry as well would
+		// capture its output twice (the entry forwards into this function).
+		bool ok = InstallConsolePrintHook();
+
+		if (!ok)
 		{
-			PVOID p = nullptr;
-			if (g_pMetaHookAPI->ResolveGameSymbol(g_pMetaHookAPI->GetEngineBase(), name,
-				MH_GAMESYMBOL_KIND_FUNCTION, &p) == MH_GAMESYMBOL_OK && p)
-				return p;
-			return nullptr;
-		};
+			// Fallback for engines where the xref scan finds nothing: hook the
+			// cl_enginefunc_t Con_Printf entry directly.
+			PVOID pPrintf = (PVOID)gEngfuncs.Con_Printf;
+			if (pPrintf)
+				g_hookConPrintf = g_pMetaHookAPI->InlineHook(pPrintf, Hook_Con_Printf, (void **)&g_pfnOrigConPrintf);
+		}
 
-		PVOID pPrintf = resolve("Con_Printf");
-		if (!pPrintf)
-			return false;
-
-		g_hookConPrintf = g_pMetaHookAPI->InlineHook(pPrintf, Hook_Con_Printf, (void **)&g_pfnOrigConPrintf);
-
-		// Optional captures: DPrintf (developer>0 output) and Warning may be
-		// absent from the gamedata catalog depending on the engine generation.
-		PVOID pDPrintf = resolve("Con_DPrintf");
+		// Con_DPrintf: developer>0 style output is captured regardless of the
+		// cvar because the suppression lives in the original function, behind
+		// our hook.
+		PVOID pDPrintf = (PVOID)gEngfuncs.Con_DPrintf;
 		if (pDPrintf)
 			g_hookConDPrintf = g_pMetaHookAPI->InlineHook(pDPrintf, Hook_Con_DPrintf, (void **)&g_pfnOrigConDPrintf);
 
-		PVOID pWarning = resolve("Con_Warning");
-		if (pWarning)
-			g_hookConWarning = g_pMetaHookAPI->InlineHook(pWarning, Hook_Con_Warning, (void **)&g_pfnOrigConWarning);
-
-		return g_hookConPrintf != nullptr;
+		return g_hookConsolePrint != nullptr || g_hookConPrintf != nullptr;
 	}
 
 	void Shutdown()
 	{
 		if (g_hookConPrintf) { g_pMetaHookAPI->UnHook(g_hookConPrintf); g_hookConPrintf = nullptr; }
 		if (g_hookConDPrintf) { g_pMetaHookAPI->UnHook(g_hookConDPrintf); g_hookConDPrintf = nullptr; }
-		if (g_hookConWarning) { g_pMetaHookAPI->UnHook(g_hookConWarning); g_hookConWarning = nullptr; }
+		if (g_hookConsolePrint) { g_pMetaHookAPI->UnHook(g_hookConsolePrint); g_hookConsolePrint = nullptr; }
 		g_pfnOrigConPrintf = nullptr;
 		g_pfnOrigConDPrintf = nullptr;
-		g_pfnOrigConWarning = nullptr;
+		g_pfnOrigConsolePrint = nullptr;
 	}
 
 	uint64_t NextSeq()
@@ -200,6 +242,6 @@ namespace OutputCapture
 
 	bool Available()
 	{
-		return g_pfnOrigConPrintf != nullptr;
+		return g_pfnOrigConsolePrint != nullptr || g_pfnOrigConPrintf != nullptr;
 	}
 }

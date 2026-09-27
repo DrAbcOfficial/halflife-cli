@@ -42,11 +42,7 @@ void IPluginsV4::LoadEngine(cl_enginefunc_t *pEngfuncs)
 
 	memcpy(&gEngfuncs, pEngfuncs, sizeof(gEngfuncs));
 
-	if (!OutputCapture::Install())
-	{
-		// Commands still run; only the output mirroring is lost.
-		ConsoleBridge::WriteOut("[halflife-cli] warning: Con_Printf capture unavailable, output mirroring disabled");
-	}
+	CLI_Config().Load();
 }
 
 void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
@@ -57,35 +53,56 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	pExportFunc->HUD_Frame = HUD_Frame;
 
 	CLI_Config().Load();
-	ConsoleBridge::Init();
-	WindowHide::SetMode(CLI_Config().hide_window);
-
-	RconServer::StartResult r = RconServer::Start(
-		CLI_Config().rcon_bind,
-		(unsigned short)CLI_Config().rcon_port,
-		CLI_Config().rcon_password,
-		CLI_Config().rcon_allowed_ips);
-
-	char banner[512];
-	if (r.ok)
+	// Install output capture here rather than LoadEngine: the engine
+	// filesystem backing gamedata/config access is not ready in LoadEngine,
+	// and symbol resolution needs the engine module fully loaded anyway.
+	if (CLI_Config().capture)
 	{
-		// Automation discovers the port here, on stdout, and via the port file.
-		_snprintf_s(banner, sizeof(banner), _TRUNCATE,
-			"halflife-cli: RCON listening on %s:%u (password: %s)",
-			CLI_Config().rcon_bind.c_str(), r.port,
-			CLI_Config().rcon_password.empty() ? "none" : "set");
-		WritePortFile(r.port);
+		bool ok = OutputCapture::Install();
+		if (!ok)
+		{
+			// Commands still run; only the output mirroring is lost.
+			ConsoleBridge::WriteOut("[halflife-cli] warning: Con_Printf capture unavailable, output mirroring disabled");
+		}
 	}
-	else
+	if (CLI_Config().console)
 	{
-		_snprintf_s(banner, sizeof(banner), _TRUNCATE,
-			"halflife-cli: RCON failed to start (%s)", r.error.c_str());
+		ConsoleBridge::Init();
 	}
-	ConsoleBridge::WriteOut("halflife-cli " + std::string(GetVersion()) +
-		" loaded (engine: " + g_pMetaHookAPI->GetEngineTypeName() + ")");
-	ConsoleBridge::WriteOut(banner);
-	ConsoleBridge::WriteOut("type a console command and press ENTER; 'cli.help' for plugin commands");
-	gEngfuncs.Con_Printf("%s\n", banner);
+	if (CLI_Config().hide_window)
+	{
+		WindowHide::SetMode(CLI_Config().hide_window);
+	}
+
+	if (CLI_Config().rcon)
+	{
+		RconServer::StartResult r = RconServer::Start(
+			CLI_Config().rcon_bind,
+			(unsigned short)CLI_Config().rcon_port,
+			CLI_Config().rcon_password,
+			CLI_Config().rcon_allowed_ips);
+
+		char banner[512];
+		if (r.ok)
+		{
+			// Automation discovers the port here, on stdout, and via the port file.
+			_snprintf_s(banner, sizeof(banner), _TRUNCATE,
+				"halflife-cli: RCON listening on %s:%u (password: %s)",
+				CLI_Config().rcon_bind.c_str(), r.port,
+				CLI_Config().rcon_password.empty() ? "none" : "set");
+			WritePortFile(r.port);
+		}
+		else
+		{
+			_snprintf_s(banner, sizeof(banner), _TRUNCATE,
+				"halflife-cli: RCON failed to start (%s)", r.error.c_str());
+		}
+		ConsoleBridge::WriteOut("halflife-cli " + std::string(GetVersion()) +
+			" loaded (engine: " + g_pMetaHookAPI->GetEngineTypeName() + ")");
+		ConsoleBridge::WriteOut(banner);
+		ConsoleBridge::WriteOut("type a console command and press ENTER; 'cli.help' for plugin commands");
+		gEngfuncs.Con_Printf("%s\n", banner);
+	}
 }
 
 void IPluginsV4::ExitGame(int iResult)
@@ -97,6 +114,8 @@ void IPluginsV4::ExitGame(int iResult)
 
 static void Cmd_CliHelp(void)
 {
+	// routed through the hooked engine Con_Printf: doubles as an execution probe
+	gEngfuncs.Con_Printf("cli.help executed (halflife-cli)\n");
 	ConsoleBridge::WriteOut("halflife-cli commands:");
 	ConsoleBridge::WriteOut("  cli.rconinfo        - show RCON endpoint info");
 	ConsoleBridge::WriteOut("  cli.window <0|1|2>  - 0=show 1=off-screen(default) 2=SW_HIDE");
@@ -139,8 +158,17 @@ void HUD_Init(void)
 		gEngfuncs.Cvar_SetValue("developer", (float)CLI_Config().developer);
 }
 
+static int g_frames = 0;
+
 void HUD_Frame(double time)
 {
+	if (g_frames < 3)
+	{
+		char s[32];
+		_snprintf_s(s, sizeof(s), _TRUNCATE, "HUD_Frame:%d", g_frames);
+	}
+	++g_frames;
+
 	WindowHide::ApplyConfiguredMode();
 	ConsoleBridge::PumpCommands();
 

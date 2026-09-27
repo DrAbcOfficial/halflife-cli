@@ -13,6 +13,9 @@ struct CliConfig
 	// [cli]
 	int hide_window = 1;                      // 0 = off, 1 = move off-screen (default), 2 = ShowWindow(SW_HIDE)
 	int developer = 1;                        // set the "developer" cvar so verbose engine output flows
+	int capture = 1;                          // hook Con_Printf/Con_DPrintf/Con_Warning
+	int console = 1;                          // 1 = full bridge, 2 = no stdin thread, 3 = no output sink, 0 = off
+	int rcon = 1;                             // RCON server
 
 	bool Load();
 };

@@ -77,14 +77,25 @@ developer=1            ; set the developer cvar at startup
 
 ## How it works
 
-- `IPluginsV4` lifecycle: `LoadEngine` installs the `Con_*` inline hooks;
-  `LoadClient` overrides `HUD_Init` (register `cli.*` commands) and
-  `HUD_Frame` (per-frame pump).
+- `IPluginsV4` lifecycle: `LoadClient` overrides `HUD_Init` (register `cli.*`
+  commands) and `HUD_Frame` (per-frame pump), starts the console bridge and the
+  RCON server. Everything is re-entrancy guarded because `LoadClient` runs
+  again on every map change.
 - Commands are queued from stdin/RCON threads and executed on the engine
-  thread via `Cbuf_AddText` (falls back to `pfnClientCmd`), so they behave
-  exactly like typed console input.
+  thread via `pfnClientCmd` (feeds the engine command buffer, i.e. identical
+  to typing), so they behave exactly like typed console input.
+- Console output capture: svengine routes all console text (command output,
+  engine prints, and the `cl_enginefunc_t` `Con_Printf` entry itself) through
+  ONE print function inside the engine module. The plugin locates it at
+  runtime by scanning for the "Unknown command" format string's cross-reference
+  (`push imm32` + `call`) and inline-hooks it; the `cl_enginefunc_t` `Con_Printf`
+  entry is hooked only as a fallback. `Con_DPrintf` is captured even when
+  `developer` is 0 (the suppression lives inside the original function, behind
+  the hook), and the plugin sets `developer 1` by default.
 - RCON responses pair a captured-output sequence range `[begin, next frame]`
-  with each command; timeout is 5s.
+  with each command (5s timeout, 4096-byte body cap); commands whose output is
+  huge are truncated. `snapshot` writes to `svencoop\screenshots\*.bmp` without
+  a console message — check the directory instead.
 - Protocol layer and command layer are decoupled; recv loops read exactly the
   announced sizes; packets are capped at 4096 body bytes; auth failure sends
   `id = -1` and disconnects; connection cap 4.
@@ -93,6 +104,9 @@ developer=1            ; set the developer cvar at startup
 
 - The MetaHookSv submodule is pinned to an upstream commit; its build system
   remains MSBuild-based and is used only when (re)building MetaHookSv itself
-  (`scripts/build-MetaHook.bat` inside the submodule; pass
-  `-p:PlatformToolset=<latest>` on VS2026 to keep toolsets consistent).
+  (`scripts/build-MetaHook.bat` inside the submodule). Building it with a VS
+  generator newer than the pinned toolset needs all projects on one toolset
+  (`-p:PlatformToolset=<latest>` on the MSBuild command line) and, with
+  CMake 4, a one-line patch in `thirdparty/capstone_fork/CMakeLists.txt`
+  (`if (POLICY CMP0048 ...)` must not fire on CMake >= 4).
 - `.zcode/`, `build/` and other local artifacts are git-ignored.

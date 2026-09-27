@@ -71,6 +71,9 @@ bool CliConfig::Load()
 		{
 			if (key == "hide_window") hide_window = atoi(value.c_str());
 			else if (key == "developer") developer = atoi(value.c_str());
+			else if (key == "capture") capture = atoi(value.c_str());
+			else if (key == "console") console = atoi(value.c_str());
+			else if (key == "rcon") rcon = atoi(value.c_str());
 		}
 	}
 	return true;

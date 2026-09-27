@@ -49,8 +49,8 @@ def send_packet(sock: socket.socket, rid: int, ptype: int, body: bytes):
     sock.sendall(struct.pack("<i", len(data)) + data)
 
 
-def connect(host: str, port: int, password: str) -> None:
-    sock.connect((host, port))
+def connect(sock: socket.socket, host: str, port: int, password: str) -> None:
+    """Perform the RCON auth handshake on an already-connected socket."""
     send_packet(sock, 1, SERVERDATA_AUTH, password.encode())
     # The server may or may not send the optional empty RESPONSE_VALUE first;
     # keep reading until we see the AUTH_RESPONSE.
@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
     sock = socket.create_connection((host, port), timeout=10)
     try:
-        connect(host, port, password)
+        connect(sock, host, port, password)  # auth handshake; socket already connected
         print(f"[connected+authed] {host}:{port}")
         for i, cmd in enumerate(commands):
             out = run_command(sock, 100 + i, cmd)
