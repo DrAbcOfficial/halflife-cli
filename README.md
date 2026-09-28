@@ -28,14 +28,14 @@ windowed mode).
 
 No game path is hardcoded: scripts resolve the game directory from (in order)
 their command-line argument, the `GAME_DIR` environment variable, and
-`scripts\game_dir.txt` (one line, machine-local, gitignored). Run
-`python scripts\find_game.py` to locate the install automatically (Steam
+`mcp\game_dir.txt` (one line, machine-local, gitignored). Run
+`python mcp\find_game.py` to locate the install automatically (Steam
 registry, `libraryfolders.vdf`, common layouts) or to validate a candidate
 with `--dir <path>`; when nothing is found, configure the path as above.
 
 ## MCP server
 
-`scripts/halflife_mcp.py` is a Model Context Protocol server (stdio transport)
+`mcp/halflife_mcp.py` is a Model Context Protocol server (stdio transport)
 that turns the game into callable tools for MCP clients. It launches the game
 itself, so the game survives the client's lifetime; a game started elsewhere
 is attached to by reading the plugin's port file.
@@ -48,14 +48,14 @@ Run it with [uv](https://docs.astral.sh/uv/) (dependencies are declared inline,
 nothing is installed globally):
 
 ```bat
-uv run --script scripts\halflife_mcp.py
+uv run --script mcp\halflife_mcp.py
 ```
 
 or with a plain Python environment:
 
 ```bat
 pip install "mcp>=2.2,<3" pillow pywin32
-python scripts\halflife_mcp.py
+python mcp\halflife_mcp.py
 ```
 
 Claude Code picks up the committed [`.mcp.json`](.mcp.json) automatically when
@@ -74,7 +74,7 @@ take a minute.
 - **stdout mirror**: all captured console output is echoed live, including
   `Con_DPrintf` output when the engine routes it to the vgui console (the
   plugin sets `developer 1` by default so it does).
-- **RCON**: `scripts/rcon_client.py <host> <port> <password> "cmd" ...` or any
+- **RCON**: `mcp/rcon_client.py <host> <port> <password> "cmd" ...` or any
   standard Source RCON client. The bound port is written to
   `svencoop\metahook\configs\halflifecli.port` for discovery.
 

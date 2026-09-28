@@ -2,7 +2,7 @@
 """Locate the Sven Co-op install directory for halflife-cli.
 
 Resolution order: --dir argument, GAME_DIR environment variable, then
-scripts/game_dir.txt (a single-line machine-local config next to this
+mcp/game_dir.txt (a single-line machine-local config next to this
 script), then a filesystem search: Steam registry roots ->
 steamapps/libraryfolders.vdf libraries -> common install layouts. The first
 candidate containing svencoop.exe wins. Nothing is hardcoded to a specific
@@ -11,8 +11,8 @@ user's install path.
 Prints the resolved directory and exits 0, or exits 1 with guidance.
 
 Usage:
-  python scripts/find_game.py              # resolve and print
-  python scripts/find_game.py --dir X      # validate one candidate
+  python mcp/find_game.py              # resolve and print
+  python mcp/find_game.py --dir X      # validate one candidate
 """
 
 import argparse
@@ -166,8 +166,8 @@ def main():
     print("ERROR: %s" % info, file=sys.stderr)
     print("Configure it externally, then retry:", file=sys.stderr)
     print('  set GAME_DIR=C:\\path\\to\\Sven Co-op', file=sys.stderr)
-    print('  or write the full path into scripts/game_dir.txt (one line):', file=sys.stderr)
-    print('  echo C:\\path\\to\\Sven Co-op>"scripts\\game_dir.txt"', file=sys.stderr)
+    print('  or write the full path into mcp/game_dir.txt (one line):', file=sys.stderr)
+    print('  echo C:\\path\\to\\Sven Co-op>"mcp\\game_dir.txt"', file=sys.stderr)
     return 1
 
 

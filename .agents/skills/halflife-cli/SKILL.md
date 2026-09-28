@@ -19,9 +19,9 @@ stdout, and a Source RCON server listens on a random localhost port.
 | Screenshots | `<game>\svencoop\screenshots\*.tga` (the engine `screenshot` command; format varies by mod) |
 | RCON port file | `<game>\svencoop\metahook\configs\halflifecli.port` |
 | Config file | `<game>\svencoop\metahook\configs\halflifecli.toml` |
-| Game dir config | `<repo>\scripts\game_dir.txt` (one line, machine-local, gitignored) |
-| RCON client / acceptance test / locator | `scripts\rcon_client.py`, `scripts\acceptance_test.py`, `scripts\find_game.py` in this repo |
-| MCP server | `scripts\halflife_mcp.py` (stdio; run with `uv run --script`), registered via `.mcp.json` |
+| Game dir config | `<repo>\mcp\game_dir.txt` (one line, machine-local, gitignored) |
+| RCON client / acceptance test / locator | `mcp\rcon_client.py`, `mcp\acceptance_test.py`, `mcp\find_game.py` in this repo |
+| MCP server | `mcp\halflife_mcp.py` (stdio; run with `uv run --script`), registered via `.mcp.json` |
 
 ## Resolve the game directory first
 
@@ -29,8 +29,8 @@ No install path is hardcoded anywhere in this project. Resolve it at the start
 of every task, before launching the game or running any script:
 
 1. If the user already gave the path in this conversation, use it.
-2. Otherwise run `python scripts\find_game.py`. It checks `GAME_DIR` and
-   `scripts\game_dir.txt` first, then searches (Steam registry →
+2. Otherwise run `python mcp\find_game.py`. It checks `GAME_DIR` and
+   `mcp\game_dir.txt` first, then searches (Steam registry →
    `steamapps\libraryfolders.vdf` libraries → common install layouts) and
    prints the first directory containing `svencoop.exe`. Pass `--dir <path>`
    to merely validate a candidate.
@@ -38,11 +38,11 @@ of every task, before launching the game or running any script:
    Then:
    - Verify the answer: the directory must contain `svencoop.exe` (and
      `svencoop\metahook\` if the plugin still needs installing).
-   - Persist it as a single line in `scripts\game_dir.txt` so later sessions
+   - Persist it as a single line in `mcp\game_dir.txt` so later sessions
      never need to ask again:
 
      ```bat
-     echo C:\Program Files (x86)\Steam\steamapps\common\Sven Co-op>"<repo>\scripts\game_dir.txt"
+     echo C:\Program Files (x86)\Steam\steamapps\common\Sven Co-op>"<repo>\mcp\game_dir.txt"
      ```
 
 Every script and snippet in this skill takes the game directory from that
@@ -51,7 +51,7 @@ resolution chain — never invent a default location.
 ## Launch and discover
 
 Automation harnesses must launch `svencoop.exe` directly with piped stdio (the
-way `scripts/acceptance_test.py` does), with `game_dir` resolved as above. Do
+way `mcp/acceptance_test.py` does), with `game_dir` resolved as above. Do
 not use `launch_cli.bat` for piping — it uses `start`, which detaches the
 console.
 
@@ -103,10 +103,10 @@ TCP; responses are synchronous, one response per command, body capped at 4096
 bytes. From this repo:
 
 ```bat
-python scripts\rcon_client.py 127.0.0.1 54321 "" "status" "echo hello"
+python mcp\rcon_client.py 127.0.0.1 54321 "" "status" "echo hello"
 ```
 
-Or in Python: `sys.path.insert(0, "<repo>/scripts"); import rcon_client`, then
+Or in Python: `sys.path.insert(0, "<repo>/mcp"); import rcon_client`, then
 `rcon_client.connect(sock, host, port, password)` and
 `rcon_client.run_command(sock, rid, command)`.
 
@@ -220,7 +220,7 @@ on its GameConsole callbacks).
 ## Debugging: symptoms → causes → fixes
 
 Run the full end-to-end check first, with the game directory resolved:
-`python scripts\acceptance_test.py` (pass `--game <path>` to override). It
+`python mcp\acceptance_test.py` (pass `--game <path>` to override). It
 exercises auth (wrong and right password), echo, version, `map` + `screenshot`
 file appearance, and clean quit.
 
@@ -244,5 +244,5 @@ Source map, for code-level debugging: `src/plugins.cpp` (lifecycle, banner,
 after execution), `src/output_capture.cpp` (console capture via VGUI2Extension
 GameConsole callbacks; no engine code hooks),
 `src/rcon_server.cpp` (protocol, auth, limits), `src/window_manager.cpp`
-(hide modes), `src/config.cpp` (ini parsing), `scripts/acceptance_test.py`
+(hide modes), `src/config.cpp` (TOML config parsing), `mcp/acceptance_test.py`
 (reference automation harness).

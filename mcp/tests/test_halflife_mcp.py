@@ -8,7 +8,7 @@
 # ///
 """Tests for halflife_mcp.py. Run with:
 
-    uv run --script scripts/tests/test_halflife_mcp.py
+    uv run --script mcp/tests/test_halflife_mcp.py
 
 Set HALFLIFE_E2E=1 to also drive the real game end-to-end (needs the plugin
 built and installed). Never attaches to or launches a real game otherwise.

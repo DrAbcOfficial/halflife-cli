@@ -6,9 +6,9 @@ the RCON banner, then exercises the RCON path: auth, echo, a DPrintf-covered
 command, snapshot, and quit. Verifies the screenshot file appears.
 
 The game directory is resolved from --game, then GAME_DIR, then
-scripts/game_dir.txt (see find_game.py). There is no default path.
+mcp/game_dir.txt (see find_game.py). There is no default path.
 
-Usage: python scripts/acceptance_test.py [--game "D:\\...\\Sven Co-op"]
+Usage: python mcp/acceptance_test.py [--game "D:\\...\\Sven Co-op"]
 """
 
 import glob
@@ -33,7 +33,7 @@ def main():
     game_dir, info = resolve_game_dir(parse_args())
     if not game_dir:
         print(f"FAIL: no game directory resolved ({info}).")
-        print("Run scripts/find_game.py, set GAME_DIR, write scripts/game_dir.txt, "
+        print("Run mcp/find_game.py, set GAME_DIR, write mcp/game_dir.txt, "
               "or pass --game <path>.")
         return 1
     print(f"[test] game dir: {game_dir} (source: {info})")

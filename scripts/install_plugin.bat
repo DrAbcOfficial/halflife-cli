@@ -6,12 +6,12 @@ setlocal
 set "RepoDir=%~dp0.."
 set "GameDir=%~1"
 if "%GameDir%"=="" if defined GAME_DIR set "GameDir=%GAME_DIR%"
-if "%GameDir%"=="" if exist "%RepoDir%\scripts\game_dir.txt" set /p GameDir=<"%RepoDir%\scripts\game_dir.txt"
+if "%GameDir%"=="" if exist "%RepoDir%\mcp\game_dir.txt" set /p GameDir=<"%RepoDir%\mcp\game_dir.txt"
 if defined GameDir set "GameDir=%GameDir:"=%"
 if "%GameDir%"=="" (
     echo ERROR: no game directory configured.
     echo   Pass the path as the first argument, set GAME_DIR, or write the full
-    echo   path ^(one line^) into scripts\game_dir.txt. Try: python scripts\find_game.py
+    echo   path ^(one line^) into mcp\game_dir.txt. Try: python mcp\find_game.py
     exit /b 1
 )
 set "PluginSrc=%RepoDir%\build\Release\HalflifeCLI.dll"
