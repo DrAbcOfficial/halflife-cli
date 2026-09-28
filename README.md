@@ -27,8 +27,9 @@ scripts\launch_cli.bat                [optional: extra launch args]
 windowed mode).
 
 No game path is hardcoded: scripts resolve the game directory from (in order)
-their command-line argument, the `GAME_DIR` environment variable, and
-`mcp\game_dir.txt` (one line, machine-local, gitignored). Run
+their command-line argument, the `GAME_DIR` environment variable, and a
+machine-local, gitignored `game_dir.txt` — `scripts\game_dir.txt` for the
+`.bat` launchers, `mcp\game_dir.txt` for the Python tooling. Run
 `python mcp\find_game.py` to locate the install automatically (Steam
 registry, `libraryfolders.vdf`, common layouts) or to validate a candidate
 with `--dir <path>`; when nothing is found, configure the path as above.

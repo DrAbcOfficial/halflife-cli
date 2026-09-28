@@ -19,7 +19,7 @@ stdout, and a Source RCON server listens on a random localhost port.
 | Screenshots | `<game>\svencoop\screenshots\*.tga` (the engine `screenshot` command; format varies by mod) |
 | RCON port file | `<game>\svencoop\metahook\configs\halflifecli.port` |
 | Config file | `<game>\svencoop\metahook\configs\halflifecli.toml` |
-| Game dir config | `<repo>\mcp\game_dir.txt` (one line, machine-local, gitignored) |
+| Game dir config | `<repo>\mcp\game_dir.txt` for the Python tooling, `<repo>\scripts\game_dir.txt` for the `.bat` launchers (one line each, machine-local, gitignored) |
 | RCON client / acceptance test / locator | `mcp\rcon_client.py`, `mcp\acceptance_test.py`, `mcp\find_game.py` in this repo |
 | MCP server | `mcp\halflife_mcp.py` (stdio; run with `uv run --script`), registered via `.mcp.json` |
 

@@ -15,7 +15,9 @@ Win32/
 *.port
 *.log
 
-# Machine-local game directory config (see mcp/find_game.py)
+# Machine-local game directory configs: scripts\ for the .bat launchers,
+# mcp\ for the Python tooling (see mcp/find_game.py)
+scripts/game_dir.txt
 mcp/game_dir.txt
 
 # OS
