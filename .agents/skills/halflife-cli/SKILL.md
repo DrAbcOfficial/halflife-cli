@@ -1,6 +1,6 @@
 ---
 name: halflife-cli
-description: Operate, automate, and debug Sven Co-op / Half-Life through the halflife-cli MetaHookSv plugin — piped-stdin console bridge, Source RCON server, and in-engine screenshots. Use whenever the task involves launching or driving the game headlessly, sending console commands (map, status, quit, cvars), capturing game screenshots via snapshot/screenshot for vision-based verification, connecting over RCON, or diagnosing why the plugin, the CLI bridge, or the game misbehaves — even if the user just says "take a screenshot of the game", "run the map", or "test the plugin".
+description: Operate, automate, and debug Sven Co-op / Half-Life through the halflife-cli MetaHookSv plugin — piped-stdin console bridge, Source RCON server, and in-engine screenshots. Use whenever the task involves launching or driving the game headlessly, sending console commands (map, status, quit, cvars), capturing game screenshots (the `screenshot` command or the MCP `snapshot` tool) for vision-based verification, connecting over RCON, or diagnosing why the plugin, the CLI bridge, or the game misbehaves — even if the user just says "take a screenshot of the game", "run the map", or "test the plugin".
 ---
 
 # halflife-cli: drive Sven Co-op / Half-Life as a CLI program
@@ -16,11 +16,12 @@ stdout, and a Source RCON server listens on a random localhost port.
 |---|---|
 | Game install | resolved externally — see "Resolve the game directory first"; a valid install contains `svencoop.exe` |
 | Mod dir | `<game>\svencoop` |
-| Screenshots | `<game>\svencoop\screenshots\*.bmp` |
+| Screenshots | `<game>\svencoop\screenshots\*.tga` (the engine `screenshot` command; format varies by mod) |
 | RCON port file | `<game>\svencoop\metahook\configs\halflifecli.port` |
 | Config file | `<game>\svencoop\metahook\configs\halflifecli.ini` |
 | Game dir config | `<repo>\scripts\game_dir.txt` (one line, machine-local, gitignored) |
 | RCON client / acceptance test / locator | `scripts\rcon_client.py`, `scripts\acceptance_test.py`, `scripts\find_game.py` in this repo |
+| MCP server | `scripts\halflife_mcp.py` (stdio; run with `uv run --script`), registered via `.mcp.json` |
 
 ## Resolve the game directory first
 
@@ -73,6 +74,27 @@ halflife-cli: RCON listening on 127.0.0.1:54321 (password: none|set)
 The same port is written to `metahook/configs/halflifecli.port` (decimal port +
 newline). The port file may be stale from a previous run — prefer the banner,
 or re-read the file only after the banner appears.
+
+## MCP tools (preferred)
+
+When an MCP server named `halflife` is available, prefer its tools over
+shelling out — they launch and supervise the game, so a game started by the
+MCP server is cleaned up on server shutdown and its console stream is readable
+via `read_console`. Tool ↔ manual mapping:
+
+| MCP tool | Replaces |
+|---|---|
+| `launch_game` | the `subprocess.Popen` + banner-wait launch loop |
+| `run_command` | `rcon_client.py` / `run_command` |
+| `find_cvar` | `cli.find <name>` over RCON |
+| `read_console` | reading the piped stdout mirror (only for MCP-launched games) |
+| `snapshot` | the engine `screenshot` command + locating the newest image + converting to PNG (returns a PNG image directly, downscaled by default) |
+| `quit_game` | `quit` over RCON, then stdin, then kill |
+| `game_status` | manual process/port inspection |
+
+Only fall back to the manual channels below when no `halflife` MCP server is
+connected, or for games that were not started by the MCP server (attached games
+expose no `read_console` stream).
 
 ## Control channels
 
@@ -128,34 +150,32 @@ If you can read images, capture and view the game like this:
 
 1. Make sure a map is loaded and rendering. From a fresh start send
    `map osprey` (or any small map) and wait for the load — the acceptance test
-   allows ~25 s after `map` before shooting. A snapshot at the main menu shows
+   allows ~25 s after `map` before shooting. A screenshot at the main menu shows
    the menu, not the game.
-2. Send `snapshot` (the engine's BMP screenshot command). `screenshot` is also
-   accepted by the engine and writes to the same directory, possibly in a
-   different format — locate results by filename, not assumed extension.
-3. Wait 1–2 s, then find the newest file by modification time:
+2. Send `screenshot` (the engine's local-file screenshot command). In Sven
+   Co-op this writes `<mod>\screenshots\<map>-<date>-NNNN.tga`. Do **not** use
+   `snapshot` for local files: `SteamScreenshots.dll` hooks it and uploads to
+   Steam instead of writing to disk. Locate results by filename, not assumed
+   extension (format varies by engine/mod: `.tga`, `.bmp`, ...).
+3. Wait 1–2 s, then find the newest image file by modification time:
 
 ```python
 import glob, os
-shots = glob.glob(os.path.join(game_dir, "svencoop", "screenshots", "*.bmp"))
+shots_dir = os.path.join(game_dir, "svencoop", "screenshots")
+shots = [p for p in glob.glob(os.path.join(shots_dir, "*"))
+         if p.lower().endswith((".tga", ".bmp", ".png", ".jpg", ".jpeg"))]
 newest = max(shots, key=os.path.getmtime)
 ```
 
-4. BMP is not readable by every harness. Convert to PNG (no dependencies,
-   Windows PowerShell):
-
-```powershell
-Add-Type -AssemblyName System.Drawing
-[System.Drawing.Image]::FromFile("$bmp").Save("$png", [System.Drawing.Imaging.ImageFormat]::Png)
-```
-
-   or Python: `from PIL import Image; Image.open(bmp).save(png)`.
+4. TGA/BMP are not readable by every harness. Convert to PNG with Python:
+   `from PIL import Image; Image.open(shot).convert("RGB").save(png)`.
+   (PowerShell's `System.Drawing` reads BMP but not TGA.)
 5. Read the PNG with your image tool and reason about the frame.
 
 The window is hidden off-screen (mode 1) yet still rendered by the OS, so
-snapshots work with no visible window. Do not switch to `cli.window 2`
+screenshots work with no visible window. Do not switch to `cli.window 2`
 (SW_HIDE) for capture — some engines pause rendering when fully hidden and
-snapshots stop updating. `cli.window 0` restores the window on screen if you
+screenshots stop updating. `cli.window 0` restores the window on screen if you
 need to watch it.
 
 ## Operating the game
@@ -201,7 +221,7 @@ on its GameConsole callbacks).
 
 Run the full end-to-end check first, with the game directory resolved:
 `python scripts\acceptance_test.py` (pass `--game <path>` to override). It
-exercises auth (wrong and right password), echo, version, `map` + `snapshot`
+exercises auth (wrong and right password), echo, version, `map` + `screenshot`
 file appearance, and clean quit.
 
 | Symptom | Likely cause | Fix |
@@ -213,7 +233,7 @@ file appearance, and clean quit.
 | `warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled` | VGUI2Extension.dll not installed or not listed in `plugins.lst` (console capture depends on it) | Commands still run; RCON replies come back EMPTY. Install VGUI2Extension.dll into `svencoop\metahook\plugins\` (re-run `install_plugin.bat`, which also adds it to `plugins.lst`) |
 | RCON auth fails immediately | Password mismatch | Check the ini; note one-strike disconnect — open a fresh connection |
 | Response is `timed out waiting for command output` | Engine busy (loading, paused) | Wait and resend; lengthen the wait after `map` |
-| Snapshot file never appears | No map loaded, or window fully hidden (`cli.window 2`) pausing render | Load a map and wait; use off-screen mode 1; wait 1–2 s after the command |
+| Screenshot file never appears | Used `snapshot` (SteamScreenshots.dll uploads it to Steam, no local file), no map loaded, or window fully hidden (`cli.window 2`) pausing render | Use `screenshot`; load a map and wait; use off-screen mode 1; wait 1–2 s after the command |
 | Port file disagrees with banner | Stale file from a previous run | Trust the banner; the file is refreshed at startup |
 | Game ignores stdin commands | stdin not actually piped (launched via `start`/bat) | Launch `svencoop.exe` directly with piped stdio, as in the acceptance test |
 | Game does not exit after `quit` | RCON path broken | Send `quit\n` on stdin as fallback, wait ~30 s, then kill as last resort |

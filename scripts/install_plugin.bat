@@ -49,10 +49,14 @@ if errorlevel 1 (
     echo plugins.lst already lists VGUI2Extension.dll
 )
 
-:: Append the plugin to plugins.lst once
+:: Append the plugin to plugins.lst once. Write a line break first: when the
+:: file does not end with a newline, the entry would otherwise be glued onto
+:: the last line (e.g. "VGUI2Extension.dllHalflifeCLI.dll"), breaking both
+:: plugins. A resulting blank line is harmless, the MetaHook loader skips it.
 findstr /i /c:"HalflifeCLI.dll" "%PluginsLst%" >nul 2>&1
 if errorlevel 1 (
-    echo HalflifeCLI.dll>>"%PluginsLst%"
+    >>"%PluginsLst%" echo(
+    >>"%PluginsLst%" echo HalflifeCLI.dll
     echo Added HalflifeCLI.dll to plugins.lst
 ) else (
     echo plugins.lst already lists HalflifeCLI.dll

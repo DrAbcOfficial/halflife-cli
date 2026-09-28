@@ -13,34 +13,20 @@ Usage: python scripts/acceptance_test.py [--game "D:\\...\\Sven Co-op"]
 
 import glob
 import os
-import re
-import subprocess
+import socket
 import sys
-import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rcon_client
 from find_game import resolve_game_dir
-
-BANNER_TIMEOUT = 120
+from game_process import BANNER_TIMEOUT_S, GameProcess, build_game_argv, screenshots_dir
 
 
 def parse_args():
     if "--game" in sys.argv:
         return sys.argv[sys.argv.index("--game") + 1]
     return None
-
-
-def read_stdout(proc, lines, evt):
-    try:
-        for raw in iter(proc.stdout.readline, b""):
-            text = raw.decode(errors="replace").rstrip()
-            lines.append(text)
-    except Exception:
-        pass
-    finally:
-        evt.set()
 
 
 def main():
@@ -51,11 +37,8 @@ def main():
               "or pass --game <path>.")
         return 1
     print(f"[test] game dir: {game_dir} (source: {info})")
-    exe = os.path.join(game_dir, "svencoop.exe")
     mod_dir = os.path.join(game_dir, "svencoop")
-    if not os.path.exists(exe):
-        print(f"FAIL: {exe} not found")
-        return 1
+    shots_dir = screenshots_dir(game_dir)
 
     # Fixed config for the run: password set so both auth paths are exercised.
     ini_dir = os.path.join(mod_dir, "metahook", "configs")
@@ -65,43 +48,30 @@ def main():
         f.write("[rcon]\npassword=test123\n\n[cli]\nhide_window=1\ndeveloper=1\n")
     print("[test] wrote config with password=test123")
 
-    shots_before = set(glob.glob(os.path.join(mod_dir, "screenshots", "*.bmp")))
+    failures = []
 
-    proc = subprocess.Popen(
-        [exe, "-windowed", "-novid"],
-        cwd=game_dir,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    lines = []
-    evt = threading.Event()
-    t = threading.Thread(target=read_stdout, args=(proc, lines, evt), daemon=True)
-    t.start()
+    # Local-file screenshots come from the engine `screenshot` command; the
+    # `snapshot` command is taken over by SteamScreenshots.dll and uploads to
+    # Steam without writing a file. Format varies (svencoop writes .tga).
+    image_exts = (".bmp", ".tga", ".png", ".jpg", ".jpeg")
+    def shots():
+        return {os.path.normpath(p) for p in glob.glob(os.path.join(shots_dir, "*"))
+                if p.lower().endswith(image_exts)}
 
+    shots_before = shots()
+
+    proc = GameProcess(build_game_argv(game_dir), cwd=game_dir)
+    proc.start()
     print(f"[test] launched pid={proc.pid}, waiting for RCON banner...")
-    deadline = time.time() + BANNER_TIMEOUT
-    banner = None
-    while time.time() < deadline:
-        for line in lines:
-            m = re.search(r"RCON listening on ([\d.]+):(\d+)", line)
-            if m:
-                banner = m
-                break
-        if banner:
-            break
-        if proc.poll() is not None:
-            break
-        time.sleep(0.5)
-
-    if not banner:
-        print("FAIL: RCON banner not seen. Game stdout:")
-        for line in lines[-40:]:
+    try:
+        host, port = proc.wait_for_banner(BANNER_TIMEOUT_S)
+    except Exception as e:
+        print(f"FAIL: {e}. Game stdout:")
+        for line in proc.tail(40):
             print("   |", line)
         proc.kill()
         return 1
 
-    host, port = banner.group(1), int(banner.group(2))
     print(f"[test] RCON endpoint {host}:{port}")
 
     # Port file must exist for headless discovery.
@@ -114,13 +84,10 @@ def main():
         print(f"[test] port file: {port_file_content!r}")
         if port_file_content != str(port):
             print(f"FAIL: port file {port_file_content!r} != banner {port}")
-            proc.kill()
-            return 1
-
-    failures = []
+            failures.append("port file disagrees with banner")
 
     # wrong password must be rejected (config sets password=test123)
-    sock2 = __import__("socket").create_connection((host, port), timeout=10)
+    sock2 = socket.create_connection((host, port), timeout=10)
     try:
         rcon_client.send_packet(sock2, 1, rcon_client.SERVERDATA_AUTH, b"definitely-wrong")
         rid, rtype, _ = rcon_client.recv_packet(sock2)
@@ -134,7 +101,9 @@ def main():
     finally:
         sock2.close()
 
-    sock = __import__("socket").create_connection((host, port), timeout=10)
+    # The wrong-password attempt got the server's one-strike disconnect; open a
+    # fresh connection for the authenticated commands.
+    sock = socket.create_connection((host, port), timeout=10)
     try:
         rcon_client.connect(sock, host, port, "test123")
         print("[test] auth ok")
@@ -151,51 +120,43 @@ def main():
         else:
             failures.append(f"version output missing: {out!r}")
 
-        # in-game snapshot: load a small map, give it time to render, shoot
+        # in-game screenshot: load a small map, give it time to render, shoot
         out = rcon_client.run_command(sock, 103, "map osprey")
         print(f"[test] map osprey -> {out[:80]!r}")
         time.sleep(25)  # map load + a few rendered frames
-        out = rcon_client.run_command(sock, 104, "snapshot")
-        print(f"[test] snapshot -> {out[:120]!r}")
+        out = rcon_client.run_command(sock, 104, "screenshot")
+        print(f"[test] screenshot -> {out[:120]!r}")
     except Exception as e:
         failures.append(f"rcon exception: {e}")
     finally:
         sock.close()
 
-    # snapshot file check (svengine writes snapshots to <mod>/screenshots/)
+    # screenshot file check (the engine writes to <mod>/screenshots/)
     time.sleep(2)
-    new_shots = set(glob.glob(os.path.join(mod_dir, "screenshots", "*.bmp"))) - shots_before
+    new_shots = shots() - shots_before
     if new_shots:
         newest = max(new_shots, key=os.path.getmtime)
         size_kb = os.path.getsize(newest) // 1024
         print(f"[test] screenshot written: {os.path.basename(newest)} ({size_kb} KB)")
     else:
-        failures.append("no new .bmp snapshot file in screenshots dir")
+        failures.append("no new screenshot file in screenshots dir")
 
     # clean shutdown through RCON
-    try:
-        sock = __import__("socket").create_connection((host, port), timeout=10)
-        rcon_client.connect(sock, host, port, "test123")
-        rcon_client.run_command(sock, 200, "quit")
-        print("[test] quit sent")
-        sock.close()
-    except Exception as e:
-        print(f"[test] quit via rcon failed ({e}); sending 'quit' via stdin")
+    def rcon_quit():
+        s = socket.create_connection((host, port), timeout=10)
         try:
-            proc.stdin.write(b"quit\n")
-            proc.stdin.flush()
-        except Exception:
-            pass
+            rcon_client.connect(s, host, port, "test123")
+            rcon_client.run_command(s, 200, "quit")
+        finally:
+            s.close()
 
-    try:
-        rc = proc.wait(timeout=30)
-        print(f"[test] game exited, code={rc}")
-    except subprocess.TimeoutExpired:
-        failures.append("game did not exit after quit")
-        proc.kill()
+    result = proc.stop(quit_command=rcon_quit, timeout=30)
+    if result.killed:
+        failures.append("game had to be killed after quit")
+    print(f"[test] game exit: {result.summary}")
 
     print("[test] last game stdout lines:")
-    for line in lines[-15:]:
+    for line in proc.tail(15):
         print("   |", line)
 
     if failures:
