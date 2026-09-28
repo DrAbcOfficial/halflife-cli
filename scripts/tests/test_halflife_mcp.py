@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.11"
 # dependencies = [
 #     "mcp>=2.2,<3",
 #     "pillow>=10",
@@ -30,7 +30,7 @@ import game_process
 import rcon_client
 import halflife_mcp
 from game_process import BANNER_RE, GameProcess
-from halflife_mcp import find_new_screenshot, parse_plugin_ini, shot_to_png
+from halflife_mcp import find_new_screenshot, read_plugin_config, shot_to_png
 
 os.environ["HALFLIFE_DISABLE_ATTACH"] = "1"
 
@@ -39,17 +39,30 @@ os.environ["HALFLIFE_DISABLE_ATTACH"] = "1"
 # Pure helpers
 # ---------------------------------------------------------------------------
 
-class TestParseIni(unittest.TestCase):
-    def test_sections_and_trimming(self):
-        ini = parse_plugin_ini("[rcon]\n  password = abc  \nbind=127.0.0.1\n\n[cli]\n; comment\n# also\nhide_window=1\n")
-        self.assertEqual(ini["rcon"]["password"], "abc")
-        self.assertEqual(ini["rcon"]["bind"], "127.0.0.1")
-        self.assertEqual(ini["cli"]["hide_window"], "1")
-        self.assertNotIn("hide_window", ini.get("rcon", {}))
+class TestReadPluginConfig(unittest.TestCase):
+    def test_sections_and_values(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg_dir = os.path.join(d, "svencoop", "metahook", "configs")
+            os.makedirs(cfg_dir)
+            with open(os.path.join(cfg_dir, "halflifecli.toml"), "wb") as f:
+                f.write(b'[rcon]\npassword = "abc"\nbind = "127.0.0.1"\n\n[cli]\nhide_window = 1\n')
+            cfg = read_plugin_config(d)
+            self.assertEqual(cfg["rcon"]["password"], "abc")
+            self.assertEqual(cfg["rcon"]["bind"], "127.0.0.1")
+            self.assertEqual(cfg["cli"]["hide_window"], 1)
+            self.assertNotIn("hide_window", cfg.get("rcon", {}))
 
-    def test_no_inline_comment(self):
-        ini = parse_plugin_ini("[rcon]\npassword=secret ; not stripped\n")
-        self.assertEqual(ini["rcon"]["password"], "secret ; not stripped")
+    def test_absent_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(read_plugin_config(d), {})
+
+    def test_malformed_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg_dir = os.path.join(d, "svencoop", "metahook", "configs")
+            os.makedirs(cfg_dir)
+            with open(os.path.join(cfg_dir, "halflifecli.toml"), "wb") as f:
+                f.write(b"[rcon\npassword = ")
+            self.assertEqual(read_plugin_config(d), {})
 
 
 class TestRconConnectHost(unittest.TestCase):

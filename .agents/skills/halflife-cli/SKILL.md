@@ -18,7 +18,7 @@ stdout, and a Source RCON server listens on a random localhost port.
 | Mod dir | `<game>\svencoop` |
 | Screenshots | `<game>\svencoop\screenshots\*.tga` (the engine `screenshot` command; format varies by mod) |
 | RCON port file | `<game>\svencoop\metahook\configs\halflifecli.port` |
-| Config file | `<game>\svencoop\metahook\configs\halflifecli.ini` |
+| Config file | `<game>\svencoop\metahook\configs\halflifecli.toml` |
 | Game dir config | `<repo>\scripts\game_dir.txt` (one line, machine-local, gitignored) |
 | RCON client / acceptance test / locator | `scripts\rcon_client.py`, `scripts\acceptance_test.py`, `scripts\find_game.py` in this repo |
 | MCP server | `scripts\halflife_mcp.py` (stdio; run with `uv run --script`), registered via `.mcp.json` |
@@ -187,20 +187,20 @@ first — the engine silently ignores a typo'd command, and `cli.find` tells
 you the correct spelling instead. Quit via RCON `quit` first; fall back to writing
 `quit\n` to stdin if the socket path fails, then wait up to ~30 s for exit.
 
-Config lives in `<game>\svencoop\metahook\configs\halflifecli.ini` (all keys
+Config lives in `<game>\svencoop\metahook\configs\halflifecli.toml` (all keys
 optional):
 
-```ini
+```toml
 [rcon]
-port=0                 ; 0 = random available port
-bind=127.0.0.1
-password=              ; empty = accept any auth
-allowed_ips=
+port = 0                    # 0 = random available port
+bind = "127.0.0.1"
+password = ""               # empty = accept any auth
+allowed_ips = ""
 
 [cli]
-hide_window=1          ; 0=off 1=off-screen (default) 2=SW_HIDE
-developer=1
-console_topmost=0      ; 1 = keep the CLI console window always on top
+hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
+developer = 1
+console_topmost = 0         # 1 = keep the CLI console window always on top
 ```
 
 Build and install from the repo root:

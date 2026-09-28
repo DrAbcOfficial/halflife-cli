@@ -1,8 +1,8 @@
 #include "config.h"
 #include "plugins.h"
 #include <metahook.h>
+#include <toml++/toml.hpp>
 #include <string>
-#include <cstring>
 
 static CliConfig g_config;
 
@@ -11,20 +11,23 @@ CliConfig& CLI_Config()
 	return g_config;
 }
 
-static std::string Trim(const std::string& s)
+static void SetInt(const toml::table& t, std::string_view key, int& out)
 {
-	size_t b = s.find_first_not_of(" \t\r\n");
-	if (b == std::string::npos)
-		return "";
-	size_t e = s.find_last_not_of(" \t\r\n");
-	return s.substr(b, e - b + 1);
+	if (auto v = t[key].value<int64_t>())
+		out = static_cast<int>(*v);
 }
 
-// Reads <mod>/metahook/configs/halflifecli.ini through the engine filesystem.
+static void SetString(const toml::table& t, std::string_view key, std::string& out)
+{
+	if (auto v = t[key].value<std::string_view>())
+		out.assign(*v);
+}
+
+// Reads <mod>/metahook/configs/halflifecli.toml through the engine filesystem.
 // Missing file is not an error: compiled-in defaults target automation usage.
 bool CliConfig::Load()
 {
-	FileHandle_t fp = FILESYSTEM_ANY_OPEN("metahook/configs/halflifecli.ini", "rb");
+	FileHandle_t fp = FILESYSTEM_ANY_OPEN("metahook/configs/halflifecli.toml", "rb");
 	if (!fp)
 		return false;
 
@@ -37,45 +40,38 @@ bool CliConfig::Load()
 	}
 	FILESYSTEM_ANY_CLOSE(fp);
 
-	std::string section;
-	size_t pos = 0;
-	while (pos <= text.size())
+	// Windows editors commonly leave a UTF-8 BOM; the TOML spec forbids it.
+	if (text.size() >= 3 && (unsigned char)text[0] == 0xEF && (unsigned char)text[1] == 0xBB && (unsigned char)text[2] == 0xBF)
+		text.erase(0, 3);
+
+	toml::table tbl;
+	try
 	{
-		size_t eol = text.find('\n', pos);
-		if (eol == std::string::npos)
-			eol = text.size();
-		std::string line = Trim(text.substr(pos, eol - pos));
-		pos = eol + 1;
+		tbl = toml::parse(text);
+	}
+	catch (const toml::parse_error& err)
+	{
+		const std::string desc(err.description());
+		gEngfuncs.Con_Printf("halflife-cli: halflifecli.toml parse error (line %u): %s, using defaults\n",
+			(unsigned)err.source().begin.line, desc.c_str());
+		return false;
+	}
 
-		if (line.empty() || line[0] == '#' || line[0] == ';')
-			continue;
-		if (line[0] == '[' && line.back() == ']')
-		{
-			section = Trim(line.substr(1, line.size() - 2));
-			continue;
-		}
-		size_t eq = line.find('=');
-		if (eq == std::string::npos)
-			continue;
-		std::string key = Trim(line.substr(0, eq));
-		std::string value = Trim(line.substr(eq + 1));
-
-		if (section == "rcon")
-		{
-			if (key == "port") rcon_port = atoi(value.c_str());
-			else if (key == "bind") rcon_bind = value;
-			else if (key == "password") rcon_password = value;
-			else if (key == "allowed_ips") rcon_allowed_ips = value;
-		}
-		else if (section == "cli")
-		{
-			if (key == "hide_window") hide_window = atoi(value.c_str());
-			else if (key == "developer") developer = atoi(value.c_str());
-			else if (key == "capture") capture = atoi(value.c_str());
-			else if (key == "console") console = atoi(value.c_str());
-			else if (key == "console_topmost") console_topmost = atoi(value.c_str());
-			else if (key == "rcon") rcon = atoi(value.c_str());
-		}
+	if (const toml::table* rcon = tbl["rcon"].as_table())
+	{
+		SetInt(*rcon, "port", rcon_port);
+		SetString(*rcon, "bind", rcon_bind);
+		SetString(*rcon, "password", rcon_password);
+		SetString(*rcon, "allowed_ips", rcon_allowed_ips);
+	}
+	if (const toml::table* cli = tbl["cli"].as_table())
+	{
+		SetInt(*cli, "hide_window", hide_window);
+		SetInt(*cli, "developer", developer);
+		SetInt(*cli, "capture", capture);
+		SetInt(*cli, "console", console);
+		SetInt(*cli, "console_topmost", console_topmost);
+		SetInt(*cli, "rcon", rcon);
 	}
 	return true;
 }

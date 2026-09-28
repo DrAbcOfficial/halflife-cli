@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 EXECUTABLE_NAME = "svencoop.exe"
 MOD_DIR_NAME = "svencoop"
-PLUGIN_INI_NAME = "halflifecli.ini"
+PLUGIN_CONFIG_NAME = "halflifecli.toml"
 PORT_FILE_NAME = "halflifecli.port"
 # Off-screen hiding needs windowed mode; -novid skips the intro video.
 FORCED_ARGS = ("-windowed", "-novid")
@@ -76,8 +76,8 @@ def plugin_config_dir(game_dir):
     return os.path.join(mod_dir(game_dir), "metahook", "configs")
 
 
-def plugin_ini_path(game_dir):
-    return os.path.join(plugin_config_dir(game_dir), PLUGIN_INI_NAME)
+def plugin_config_path(game_dir):
+    return os.path.join(plugin_config_dir(game_dir), PLUGIN_CONFIG_NAME)
 
 
 def port_file_path(game_dir):

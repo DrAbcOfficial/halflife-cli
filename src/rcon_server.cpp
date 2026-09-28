@@ -99,7 +99,7 @@ namespace
 		if (type == SERVERDATA_AUTH)
 		{
 			// Empty configured password keeps automation friction low on a
-			// localhost-only bind; set "password" in halflifecli.ini to require it.
+			// localhost-only bind; set "password" in halflifecli.toml to require it.
 			bool ok = g_password.empty() ? true : (body == g_password);
 			if (ok)
 			{

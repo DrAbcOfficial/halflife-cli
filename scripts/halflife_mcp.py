@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.11"
 # dependencies = [
 #     "mcp>=2.2,<3",
 #     "pillow>=10",
@@ -22,6 +22,7 @@ import os
 import sys
 import threading
 import time
+import tomllib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -35,7 +36,7 @@ from game_process import (
     RconStartError,
     build_game_argv,
     mod_dir,
-    plugin_ini_path,
+    plugin_config_path,
     port_file_path,
     rcon_connect_host,
     screenshots_dir,
@@ -98,44 +99,22 @@ class ConsoleWindow(BaseModel):
 # Pure helpers (unit-testable without a game)
 # ---------------------------------------------------------------------------
 
-def parse_plugin_ini(text):
-    """Parse halflifecli.ini into {section: {key: value}}, matching src/config.cpp.
-
-    Sections are `[name]`; keys are `name=value`; `;` and `#` comment lines are
-    skipped; values are whitespace-trimmed; inline comments are not stripped.
-    """
-    sections = {}
-    section = ""
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line[0] in ";#":
-            continue
-        if line[0] == "[" and line.endswith("]"):
-            section = line[1:-1].strip()
-            continue
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        sections.setdefault(section, {})[key.strip()] = value.strip()
-    return sections
-
-
-def read_plugin_ini(game_dir):
-    """halflifecli.ini as parsed sections, or {} when absent/unreadable."""
-    path = plugin_ini_path(game_dir)
+def read_plugin_config(game_dir):
+    """halflifecli.toml as parsed tables, or {} when absent/unreadable."""
+    path = plugin_config_path(game_dir)
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            return parse_plugin_ini(f.read())
-    except OSError:
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
         return {}
 
 
 def plugin_rcon_password(game_dir):
-    return read_plugin_ini(game_dir).get("rcon", {}).get("password", "")
+    return read_plugin_config(game_dir).get("rcon", {}).get("password", "")
 
 
 def plugin_rcon_bind(game_dir):
-    return read_plugin_ini(game_dir).get("rcon", {}).get("bind", "127.0.0.1")
+    return read_plugin_config(game_dir).get("rcon", {}).get("bind", "127.0.0.1")
 
 
 def read_port_file(game_dir):

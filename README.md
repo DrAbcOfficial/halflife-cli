@@ -90,19 +90,19 @@ directly. `install_plugin.bat` ensures `VGUI2Extension.dll` is listed first in
 
 ## Configuration
 
-`svencoop\metahook\configs\halflifecli.ini` (all optional):
+`svencoop\metahook\configs\halflifecli.toml` (all optional):
 
-```ini
+```toml
 [rcon]
-port=0                 ; 0 = random available port
-bind=127.0.0.1         ; default allows localhost connections only
-password=              ; empty = accept any auth (localhost default); set to require
-allowed_ips=           ; comma separated whitelist; empty = bind address only
+port = 0                    # 0 = random available port
+bind = "127.0.0.1"          # default allows localhost connections only
+password = ""               # empty = accept any auth (localhost default); set to require
+allowed_ips = ""            # comma separated whitelist; empty = bind address only
 
 [cli]
-hide_window=1          ; 0=off 1=off-screen (default) 2=SW_HIDE
-developer=1            ; set the developer cvar at startup
-console_topmost=0      ; 1 = keep the CLI console window always on top
+hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
+developer = 1               # set the developer cvar at startup
+console_topmost = 0         # 1 = keep the CLI console window always on top
 ```
 
 ## CI

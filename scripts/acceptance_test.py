@@ -41,11 +41,11 @@ def main():
     shots_dir = screenshots_dir(game_dir)
 
     # Fixed config for the run: password set so both auth paths are exercised.
-    ini_dir = os.path.join(mod_dir, "metahook", "configs")
-    os.makedirs(ini_dir, exist_ok=True)
-    ini_path = os.path.join(ini_dir, "halflifecli.ini")
-    with open(ini_path, "w") as f:
-        f.write("[rcon]\npassword=test123\n\n[cli]\nhide_window=1\ndeveloper=1\n")
+    cfg_dir = os.path.join(mod_dir, "metahook", "configs")
+    os.makedirs(cfg_dir, exist_ok=True)
+    cfg_path = os.path.join(cfg_dir, "halflifecli.toml")
+    with open(cfg_path, "w") as f:
+        f.write('[rcon]\npassword = "test123"\n\n[cli]\nhide_window = 1\ndeveloper = 1\n')
     print("[test] wrote config with password=test123")
 
     failures = []
