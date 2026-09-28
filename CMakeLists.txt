@@ -16,7 +16,7 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
 	message(FATAL_ERROR "halflife-cli must target Win32/x86 (the game process is 32-bit). Configure with: cmake -A Win32")
 endif()
 
-set(METAHOOKSV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/MetaHookSv")
+set(METAHOOKSV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/MetaHookSv")
 if(NOT EXISTS "${METAHOOKSV_DIR}/include/metahook.h")
 	message(FATAL_ERROR "MetaHookSv submodule is missing. Run: git submodule update --init --depth 1")
 endif()

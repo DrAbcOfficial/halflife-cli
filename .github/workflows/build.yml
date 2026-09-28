@@ -14,10 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
-      # Non-recursive on purpose: the plugin build only needs MetaHookSv's
-      # headers; its thirdparty submodules (SDL3, bullet3, capstone, ...) are
-      # not required and would add gigabytes.
-      - name: Init MetaHookSv submodule (shallow, top-level only)
+      # Non-recursive on purpose: only MetaHookSv's headers (its own thirdparty
+      # submodules — SDL3, bullet3, capstone, ... — would add gigabytes) and
+      # tomlplusplus's headers are needed.
+      - name: Init submodules (shallow, top-level only)
         run: git submodule update --init --depth 1
 
       # No explicit generator: cmake picks the newest Visual Studio installed

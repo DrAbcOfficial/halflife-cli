@@ -1,3 +1,6 @@
-[submodule "MetaHookSv"]
-	path = MetaHookSv
+[submodule "thirdparty/MetaHookSv"]
+	path = thirdparty/MetaHookSv
 	url = https://github.com/hzqst/MetaHookSv
+[submodule "thirdparty/tomlplusplus"]
+	path = thirdparty/tomlplusplus
+	url = https://github.com/marzer/tomlplusplus
