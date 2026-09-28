@@ -2,7 +2,7 @@
 
 A [MetaHookSv](https://github.com/hzqst/MetaHookSv) plugin that turns
 Half-Life / Sven Co-op into a CLI-driven program for automated testing or agent operation:
-the game window is hidden (but alive, so `snapshot` keeps working), a CLI
+the game window is hidden (but alive, so `screenshot` keeps working), a CLI
 console is exposed, commands come in through stdin, and a Source RCON server
 runs on a random localhost port.
 
@@ -33,9 +33,39 @@ their command-line argument, the `GAME_DIR` environment variable, and
 registry, `libraryfolders.vdf`, common layouts) or to validate a candidate
 with `--dir <path>`; when nothing is found, configure the path as above.
 
+## MCP server
+
+`scripts/halflife_mcp.py` is a Model Context Protocol server (stdio transport)
+that turns the game into callable tools for MCP clients. It launches the game
+itself, so the game survives the client's lifetime; a game started elsewhere
+is attached to by reading the plugin's port file.
+
+Tools: `launch_game`, `game_status`, `run_command`, `find_cvar`,
+`read_console`, `snapshot` (returns a PNG image, downscaled by default), and
+`quit_game`.
+
+Run it with [uv](https://docs.astral.sh/uv/) (dependencies are declared inline,
+nothing is installed globally):
+
+```bat
+uv run --script scripts\halflife_mcp.py
+```
+
+or with a plain Python environment:
+
+```bat
+pip install "mcp>=2.2,<3" pillow pywin32
+python scripts\halflife_mcp.py
+```
+
+Claude Code picks up the committed [`.mcp.json`](.mcp.json) automatically when
+the repo is opened (it asks for approval the first time); register it elsewhere
+with `claude mcp add`. The first `uv run` downloads the dependencies, which can
+take a minute.
+
 ## Using it
 - **stdin**: every line is executed as a game console command (`status`,
-  `map osprey`, `snapshot`, `quit`, ...). Plugin commands: `cli.help`,
+  `map osprey`, `screenshot`, `quit`, ...). Plugin commands: `cli.help`,
   `cli.rconinfo`, `cli.window <0|1|2>` (0=show, 1=off-screen default,
   2=SW_HIDE; note SW_HIDE may pause rendering on some engines), and
   `cli.find <name>` to check whether a cvar/command exists — when it does

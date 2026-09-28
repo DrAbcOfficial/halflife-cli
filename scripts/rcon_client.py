@@ -14,6 +14,7 @@ Example:
 import socket
 import struct
 import sys
+import threading
 import time
 
 SERVERDATA_AUTH = 3
@@ -21,7 +22,11 @@ SERVERDATA_AUTH_RESPONSE = 2
 SERVERDATA_EXECCOMMAND = 2
 SERVERDATA_RESPONSE_VALUE = 0
 
+MAX_BODY = 4096
 MAX_PACKET = 4110  # 10 + 4096 body, matches the server-side cap
+CONNECT_TIMEOUT_S = 10
+FIRST_COMMAND_ID = 100
+MAX_COMMAND_ID = 0x7FFFFFFF  # request ids are signed int32 on the wire
 
 
 def recv_exact(sock: socket.socket, n: int) -> bytes:
@@ -72,6 +77,72 @@ def run_command(sock: socket.socket, rid: int, command: str) -> str:
         if resp_type == SERVERDATA_RESPONSE_VALUE and resp_id == rid:
             return body.decode(errors="replace")
     raise TimeoutError(f"no response for command within 10s: {command}")
+
+
+class RconConnection:
+    """A persistent authenticated RCON connection, safe to share between threads.
+
+    Connects lazily on the first command. On any I/O error the socket is
+    dropped and the error propagates; the next command reconnects. A failed
+    command is never retried automatically: the game may already have run it,
+    and console commands (map, quit, ...) are not idempotent.
+    """
+
+    def __init__(self, host: str, port: int, password: str, timeout: float = CONNECT_TIMEOUT_S):
+        self.host = host
+        self.port = port
+        self._password = password
+        self._timeout = timeout
+        self._sock = None
+        self._next_id = FIRST_COMMAND_ID
+        self._lock = threading.Lock()
+
+    def _ensure_connected(self) -> socket.socket:
+        if self._sock is None:
+            sock = socket.create_connection((self.host, self.port), timeout=self._timeout)
+            try:
+                connect(sock, self.host, self.port, self._password)
+            except BaseException:
+                sock.close()
+                raise
+            self._sock = sock
+        return self._sock
+
+    def _take_id(self) -> int:
+        rid = self._next_id
+        self._next_id = FIRST_COMMAND_ID if rid >= MAX_COMMAND_ID else rid + 1
+        return rid
+
+    def open(self) -> None:
+        """Connect and authenticate now instead of on the first command."""
+        with self._lock:
+            try:
+                self._ensure_connected()
+            except BaseException:
+                self._close_locked()
+                raise
+
+    def command(self, text: str) -> str:
+        body = text.encode()
+        if len(body) > MAX_BODY:
+            raise ValueError(f"command is {len(body)} bytes, RCON allows at most {MAX_BODY}")
+        with self._lock:
+            try:
+                return run_command(self._ensure_connected(), self._take_id(), text)
+            except BaseException:
+                self._close_locked()
+                raise
+
+    def _close_locked(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            finally:
+                self._sock = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._close_locked()
 
 
 if __name__ == "__main__":
