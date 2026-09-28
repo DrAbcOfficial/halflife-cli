@@ -21,6 +21,11 @@ if(NOT EXISTS "${METAHOOKSV_DIR}/include/metahook.h")
 	message(FATAL_ERROR "MetaHookSv submodule is missing. Run: git submodule update --init --depth 1")
 endif()
 
+set(TOMLPLUSPLUS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tomlplusplus")
+if(NOT EXISTS "${TOMLPLUSPLUS_DIR}/include/toml++/toml.hpp")
+	message(FATAL_ERROR "tomlplusplus submodule is missing. Run: git submodule update --init --depth 1")
+endif()
+
 add_library(HalflifeCLI SHARED
 	src/plugins.cpp
 	src/exportfuncs.cpp
@@ -36,6 +41,7 @@ target_compile_features(HalflifeCLI PRIVATE cxx_std_20)
 
 target_include_directories(HalflifeCLI PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${TOMLPLUSPLUS_DIR}/include
 	${METAHOOKSV_DIR}/include
 	${METAHOOKSV_DIR}/include/Interface
 	${METAHOOKSV_DIR}/include/Interface/VGUI
