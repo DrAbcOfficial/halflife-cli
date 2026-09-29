@@ -19,7 +19,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rcon_client
-from game_process import IMAGE_EXTENSIONS, screenshots_dir
+from game_process import IMAGE_EXTENSIONS, plugin_config_path, port_file_path, screenshots_dir
 from testcommon import launch_test_game, parse_game_arg, resolve_or_fail
 
 USAGE = ("Run mcp/find_game.py, set GAME_DIR, write mcp/game_dir.txt, "
@@ -31,13 +31,11 @@ def main():
     if not game_dir:
         return 1
     print(f"[test] game dir: {game_dir} (source: {info})")
-    mod_dir = os.path.join(game_dir, "svencoop")
     shots_dir = screenshots_dir(game_dir)
 
     # Fixed config for the run: password set so both auth paths are exercised.
-    cfg_dir = os.path.join(mod_dir, "metahook", "configs")
-    os.makedirs(cfg_dir, exist_ok=True)
-    cfg_path = os.path.join(cfg_dir, "halflifecli.toml")
+    cfg_path = plugin_config_path(game_dir)
+    os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
     with open(cfg_path, "w") as f:
         f.write('[rcon]\npassword = "test123"\n\n[cli]\nhide_window = 1\ndeveloper = 1\n')
     print("[test] wrote config with password=test123")
@@ -58,7 +56,7 @@ def main():
         return 1
 
     # Port file must exist for headless discovery.
-    port_file = os.path.join(mod_dir, "metahook", "configs", "halflifecli.port")
+    port_file = port_file_path(game_dir)
     if not os.path.exists(port_file):
         print(f"FAIL: port file missing: {port_file}")
         failures.append("port file missing")

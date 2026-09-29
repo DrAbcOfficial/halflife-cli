@@ -19,7 +19,7 @@ struct CliConfig
 	int rcon = 1;                             // RCON server
 
 	// [usermsg]
-	int usermsg_enabled = 1;                  // hook + decode server user messages (metahook/configs/usermsgs/)
+	int usermsg_enabled = 1;                  // hook + decode server user messages (configs/halflifecli/usermsgs/)
 	std::string usermsg_file;                 // schema file name; empty = "<gamedir>.toml"
 	int usermsg_max_string = 64;              // truncate decoded strings longer than this
 	// Channels (comma separated) echoed to the console while recorded;

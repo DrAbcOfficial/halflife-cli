@@ -11,14 +11,26 @@
 #include <metahook.h>
 
 #include <cstdio>
+#include <direct.h>
 #include <string>
 
 // Plugin lifecycle: MetaHook entry points, engine/client export overrides and
 // module wiring. The cli.* console commands live in cli_commands.cpp.
 
+// The plugin keeps its data in metahook/configs/halflifecli/; the engine
+// filesystem does not create folders on write, and a fresh install (or an
+// upgrade from the pre-subfolder layout) may not have it yet.
+static void EnsurePluginConfigDir()
+{
+	const char* gameDir = g_pMetaHookAPI->GetGameDirectory();
+	if (gameDir && *gameDir)
+		_mkdir((std::string(gameDir) + "\\metahook\\configs\\halflifecli").c_str());  // exists -> EEXIST, ignored
+}
+
 static void WritePortFile(unsigned short port)
 {
-	FileHandle_t fp = FILESYSTEM_ANY_OPEN("metahook/configs/halflifecli.port", "wb");
+	EnsurePluginConfigDir();
+	FileHandle_t fp = FILESYSTEM_ANY_OPEN("metahook/configs/halflifecli/halflifecli.port", "wb");
 	if (!fp)
 		return;
 	char buf[16];

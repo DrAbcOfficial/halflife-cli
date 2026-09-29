@@ -17,8 +17,10 @@ if "%GameDir%"=="" (
 set "PluginSrc=%RepoDir%\build\Release\HalflifeCLI.dll"
 set "PluginDst=%GameDir%\svencoop\metahook\plugins\HalflifeCLI.dll"
 set "PluginsLst=%GameDir%\svencoop\metahook\configs\plugins.lst"
+set "PluginDataDir=%GameDir%\svencoop\metahook\configs\halflifecli"
+set "LegacyConfigDir=%GameDir%\svencoop\metahook\configs"
 set "SchemaSrc=%RepoDir%\configs\usermsgs"
-set "SchemaDst=%GameDir%\svencoop\metahook\configs\usermsgs"
+set "SchemaDst=%PluginDataDir%\usermsgs"
 
 if not exist "%PluginSrc%" (
     echo ERROR: %PluginSrc% not found. Build first:
@@ -32,6 +34,18 @@ if not exist "%GameDir%\svencoop\metahook\plugins" (
 )
 
 copy /y "%PluginSrc%" "%PluginDst%" || exit /b 1
+
+:: All plugin data (halflifecli.toml, the port file, usermsg schemas) lives in
+:: this subfolder of MetaHook's configs dir.
+if not exist "%PluginDataDir%" mkdir "%PluginDataDir%"
+
+:: Migrate an install from the pre-halflifecli layout (top-level files in
+:: metahook\configs). The port file is rewritten at every plugin start.
+if exist "%LegacyConfigDir%\halflifecli.toml" if not exist "%PluginDataDir%\halflifecli.toml" (
+    move /y "%LegacyConfigDir%\halflifecli.toml" "%PluginDataDir%\halflifecli.toml" >nul
+    echo Migrated halflifecli.toml into %PluginDataDir%
+)
+if exist "%LegacyConfigDir%\halflifecli.port" move /y "%LegacyConfigDir%\halflifecli.port" "%PluginDataDir%\" >nul
 
 :: VGUI2Extension.dll is a hard dependency: console output is captured through
 :: its GameConsole callbacks. Warn when the DLL itself is not installed.
@@ -64,7 +78,7 @@ if errorlevel 1 (
     echo plugins.lst already lists HalflifeCLI.dll
 )
 
-:: UserMsg schema definitions (per-game TOML) next to the plugin config.
+:: UserMsg schema definitions (per-game TOML) inside the plugin's config folder.
 if not exist "%SchemaSrc%\valve.toml" (
     echo WARNING: %SchemaSrc%\valve.toml not found, usermsg schemas not installed.
 ) else (

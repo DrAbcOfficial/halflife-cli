@@ -17,8 +17,8 @@ stdout, and a Source RCON server listens on a random localhost port.
 | Game install | resolved externally — see "Resolve the game directory first"; a valid install contains `svencoop.exe` |
 | Mod dir | `<game>\svencoop` |
 | Screenshots | `<game>\svencoop\screenshots\*.tga` (the engine `screenshot` command; format varies by mod) |
-| RCON port file | `<game>\svencoop\metahook\configs\halflifecli.port` |
-| Config file | `<game>\svencoop\metahook\configs\halflifecli.toml` |
+| RCON port file | `<game>\svencoop\metahook\configs\halflifecli\halflifecli.port` |
+| Config file | `<game>\svencoop\metahook\configs\halflifecli\halflifecli.toml` |
 | Game dir config | `<repo>\mcp\game_dir.txt` for the Python tooling, `<repo>\scripts\game_dir.txt` for the `.bat` launchers (one line each, machine-local, gitignored) |
 | RCON client / acceptance test / locator | `mcp\rcon_client.py`, `mcp\acceptance_test.py`, `mcp\find_game.py` in this repo |
 | MCP server | `mcp\halflife_mcp.py` (stdio; run with `uv run --script`), registered via `.mcp.json` |
@@ -71,7 +71,7 @@ Then read stdout until you see the banner (allow up to ~120 s for game start):
 halflife-cli: RCON listening on 127.0.0.1:54321 (password: none|set)
 ```
 
-The same port is written to `metahook/configs/halflifecli.port` (decimal port +
+The same port is written to `metahook/configs/halflifecli/halflifecli.port` (decimal port +
 newline). The port file may be stale from a previous run — prefer the banner,
 or re-read the file only after the banner appears.
 
@@ -101,7 +101,7 @@ expose no `read_console` stream).
 
 While connected to a server, the plugin decodes every server user message per
 a TOML schema (one file per `-game` folder in
-`svencoop\metahook\configs\usermsgs\`, maintained in the repo at
+`svencoop\metahook\configs\halflifecli\usermsgs\`, maintained in the repo at
 `configs/usermsgs/`) and records the last 512 per channel into a
 channel-keyed event ring. A message's channel is its functional group from
 the schema's `channel` key (weapon, status, text, score, screen, world, hud,
@@ -208,7 +208,7 @@ first — the engine silently ignores a typo'd command, and `cli.find` tells
 you the correct spelling instead. Quit via RCON `quit` first; fall back to writing
 `quit\n` to stdin if the socket path fails, then wait up to ~30 s for exit.
 
-Config lives in `<game>\svencoop\metahook\configs\halflifecli.toml` (all keys
+Config lives in `<game>\svencoop\metahook\configs\halflifecli\halflifecli.toml` (all keys
 optional):
 
 ```toml

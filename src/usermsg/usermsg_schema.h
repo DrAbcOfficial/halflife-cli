@@ -50,11 +50,11 @@ struct UserMsgSchema
 	std::vector<UserMsgDef> messages;
 	std::map<std::string, size_t> index;  // lowercased name -> position in messages
 
-	// Loads "<mod>/metahook/configs/usermsgs/<file>", following "extends"
-	// chains (a child message replaces the same-name base message). Every
-	// message carries the functional group named by its optional "channel"
-	// key; an override without one inherits the base's, and whatever is left
-	// empty falls back to kDefaultChannel.
+	// Loads "<mod>/metahook/configs/halflifecli/usermsgs/<file>", following
+	// "extends" chains (a child message replaces the same-name base
+	// message). Every message carries the functional group named by its
+	// optional "channel" key; an override without one inherits the base's,
+	// and whatever is left empty falls back to kDefaultChannel.
 	// Details of failures are printed through Con_Printf.
 	LoadResult Load(const std::string& file);
 };

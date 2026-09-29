@@ -24,6 +24,9 @@ log = logging.getLogger(__name__)
 
 EXECUTABLE_NAME = "svencoop.exe"
 MOD_DIR_NAME = "svencoop"
+# The plugin keeps its config, port file and usermsg schemas in its own
+# subfolder of MetaHook's configs directory (src/core/plugins.cpp writes there).
+PLUGIN_DATA_DIR_NAME = "halflifecli"
 PLUGIN_CONFIG_NAME = "halflifecli.toml"
 PORT_FILE_NAME = "halflifecli.port"
 # Off-screen hiding needs windowed mode; -novid skips the intro video.
@@ -73,7 +76,8 @@ def mod_dir(game_dir):
 
 
 def plugin_config_dir(game_dir):
-    return os.path.join(mod_dir(game_dir), "metahook", "configs")
+    """The plugin's own config subfolder inside MetaHook's configs dir."""
+    return os.path.join(mod_dir(game_dir), "metahook", "configs", PLUGIN_DATA_DIR_NAME)
 
 
 def plugin_config_path(game_dir):

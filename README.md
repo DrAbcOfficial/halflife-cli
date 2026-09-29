@@ -83,7 +83,7 @@ take a minute.
   `cli.usermsg on|off|reload|list|pending|<name>` controls it.
 - **RCON**: `mcp/rcon_client.py <host> <port> <password> "cmd" ...` or any
   standard Source RCON client. The bound port is written to
-  `svencoop\metahook\configs\halflifecli.port` for discovery.
+  `svencoop\metahook\configs\halflifecli\halflifecli.port` for discovery.
 
 ## UserMsg monitor
 
@@ -117,7 +117,7 @@ notice and disables usermsg collection entirely (nothing is hooked or
 recorded). Installing the schema and running `cli.usermsg reload` — or just
 changing maps, which re-runs the load — re-enables it.
 
-Schemas live in `svencoop\metahook\configs\usermsgs\<gamedir>.toml`
+Schemas live in `svencoop\metahook\configs\halflifecli\usermsgs\<gamedir>.toml`
 (`configs/usermsgs/` in the repo, installed by `install_plugin.bat`). One file
 per `-game` folder: `valve.toml` (Half-Life), `cstrike.toml`,
 `svencoop.toml`. A file may inherit a base with
@@ -160,7 +160,7 @@ directly. `install_plugin.bat` ensures `VGUI2Extension.dll` is listed first in
 
 ## Configuration
 
-`svencoop\metahook\configs\halflifecli.toml` (all optional):
+`svencoop\metahook\configs\halflifecli\halflifecli.toml` (all optional):
 
 ```toml
 [rcon]
@@ -176,7 +176,7 @@ console_topmost = 0         # 1 = keep the CLI console window always on top
 
 [usermsg]
 enabled = 1                 # hook + decode server user messages
-file = ""                   # schema file; empty = "<gamedir>.toml" in configs/usermsgs/
+file = ""                   # schema file; empty = "<gamedir>.toml" in configs/halflifecli/usermsgs/
 max_string = 64             # truncate decoded strings longer than this
 display_channels = "all"    # channels echoed to the console while recorded (comma separated; "all" = wildcard, empty = record only)
 ```

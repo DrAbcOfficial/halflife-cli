@@ -11,7 +11,8 @@
 
 namespace
 {
-	constexpr const char* kSchemaDir = "metahook/configs/usermsgs/";
+	// Schemas live in the plugin's own config subfolder.
+	constexpr const char* kSchemaDir = "metahook/configs/halflifecli/usermsgs/";
 
 	bool ParseCount(const toml::table& t, UserMsgField& f, std::string& err)
 	{

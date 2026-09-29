@@ -50,7 +50,7 @@ os.environ["HALFLIFE_DISABLE_ATTACH"] = "1"
 class TestReadPluginConfig(unittest.TestCase):
     def test_sections_and_values(self):
         with tempfile.TemporaryDirectory() as d:
-            cfg_dir = os.path.join(d, "svencoop", "metahook", "configs")
+            cfg_dir = os.path.join(d, "svencoop", "metahook", "configs", "halflifecli")
             os.makedirs(cfg_dir)
             with open(os.path.join(cfg_dir, "halflifecli.toml"), "wb") as f:
                 f.write(b'[rcon]\npassword = "abc"\nbind = "127.0.0.1"\n\n[cli]\nhide_window = 1\n')
@@ -66,7 +66,7 @@ class TestReadPluginConfig(unittest.TestCase):
 
     def test_malformed_file(self):
         with tempfile.TemporaryDirectory() as d:
-            cfg_dir = os.path.join(d, "svencoop", "metahook", "configs")
+            cfg_dir = os.path.join(d, "svencoop", "metahook", "configs", "halflifecli")
             os.makedirs(cfg_dir)
             with open(os.path.join(cfg_dir, "halflifecli.toml"), "wb") as f:
                 f.write(b"[rcon\npassword = ")
@@ -199,7 +199,7 @@ class TestUserMsgParsers(unittest.TestCase):
         self.assertIsNone(more)
 
     def _write_game_dir(self, root):
-        cfg = os.path.join(root, "svencoop", "metahook", "configs")
+        cfg = os.path.join(root, "svencoop", "metahook", "configs", "halflifecli")
         schemas = os.path.join(cfg, "usermsgs")
         os.makedirs(schemas)
         with open(os.path.join(cfg, "halflifecli.toml"), "wb") as f:
@@ -244,7 +244,7 @@ class TestUserMsgParsers(unittest.TestCase):
             n = sync_usermsg_schemas(game, src)
             self.assertEqual(n, 1)
             self.assertTrue(os.path.exists(
-                os.path.join(game, "svencoop", "metahook", "configs", "usermsgs", "a.toml")))
+                os.path.join(game, "svencoop", "metahook", "configs", "halflifecli", "usermsgs", "a.toml")))
 
 
 # ---------------------------------------------------------------------------

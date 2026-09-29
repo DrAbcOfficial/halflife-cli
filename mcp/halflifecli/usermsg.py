@@ -13,7 +13,7 @@ import tomllib
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-from game_process import mod_dir
+from game_process import mod_dir, plugin_config_dir
 from halflifecli.models import UserMsgEvent, UserMsgEvents, UserMsgMessages, UserMsgStatus
 from halflifecli.plugin_config import read_plugin_config
 
@@ -61,7 +61,8 @@ def parse_usermsg_events(text):
 
 
 def usermsg_schema_dir(game_dir):
-    return os.path.join(mod_dir(game_dir), "metahook", "configs", "usermsgs")
+    """Same folder the plugin loads schemas from (configs/halflifecli/usermsgs/)."""
+    return os.path.join(plugin_config_dir(game_dir), "usermsgs")
 
 
 def usermsg_schema_file(game_dir):
@@ -73,7 +74,7 @@ def usermsg_schema_file(game_dir):
 def load_usermsg_schema(game_dir):
     """Merged UserMsgMessages for the game's schema, following extends chains.
 
-    Reads the same files the plugin loads (mod/metahook/configs/usermsgs/);
+    Reads the same files the plugin loads (mod/metahook/configs/halflifecli/usermsgs/);
     base files load first so the child's definitions win, like the plugin.
     Every merged message carries the "channel" functional group of its
     definition; an override without one inherits the base's, and anything

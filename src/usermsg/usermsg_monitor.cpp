@@ -238,8 +238,8 @@ namespace
 		if (result == UserMsgSchema::LoadResult::Missing)
 		{
 			gEngfuncs.Con_Printf("halflife-cli: usermsg monitoring disabled "
-				"(no schema for this mod; install one into metahook/configs/usermsgs/"
-				" and run \"cli.usermsg reload\")\n");
+				"(no schema for this mod; install one into metahook/configs/halflifecli/"
+				"usermsgs/ and run \"cli.usermsg reload\")\n");
 			return;
 		}
 
@@ -469,7 +469,7 @@ namespace UserMsgMonitor
 				gEngfuncs.Con_Printf("cli.usermsg: no schema loaded ([usermsg] disabled in halflifecli.toml?)\n");
 			else if (g_schemaMissing)
 				gEngfuncs.Con_Printf("cli.usermsg: monitoring disabled - schema \"%s\" not found "
-					"(install it into metahook/configs/usermsgs/, then run \"cli.usermsg reload\")\n",
+					"(install it into metahook/configs/halflifecli/usermsgs/, then run \"cli.usermsg reload\")\n",
 					g_schemaFile.c_str());
 			else
 				gEngfuncs.Con_Printf("cli.usermsg: no schema loaded\n");

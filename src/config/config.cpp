@@ -7,7 +7,8 @@
 
 namespace
 {
-	const char kConfigPath[] = "metahook/configs/halflifecli.toml";
+	// All plugin data lives in its own subfolder of MetaHook's configs dir.
+	const char kConfigPath[] = "metahook/configs/halflifecli/halflifecli.toml";
 
 	void SetInt(const toml::table& t, std::string_view key, int& out)
 	{
@@ -29,7 +30,7 @@ CliConfig& CLI_Config()
 	return g_config;
 }
 
-// Reads metahook/configs/halflifecli.toml through the engine filesystem.
+// Reads the plugin config through the engine filesystem.
 // Missing file is not an error: compiled-in defaults target automation usage.
 bool CliConfig::Load()
 {
