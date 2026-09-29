@@ -7,6 +7,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <deque>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -19,10 +21,26 @@ namespace
 		bool known = false;                 // an engine entry carries our dispatcher
 	};
 
+	// One decoded message kept for querying ("cli.usermsg events"). Recorded
+	// even when console display is off, so the monitor doubles as a traffic
+	// recorder.
+	struct UserMsgEvent
+	{
+		uint64_t seq;      // monotonic, 1-based; survives display toggles
+		std::string line;  // "[usermsg] Name size=N field=value ..."
+	};
+
+	constexpr size_t kMaxEvents = 512;
+	// cli.usermsg events/list budget: the RCON response body caps at 4096
+	// bytes and other console output rides along, so stop well before that.
+	constexpr size_t kReplyByteBudget = 3300;
+
 	std::vector<HookEntry> g_entries;
+	std::deque<UserMsgEvent> g_events;
+	uint64_t g_nextSeq = 1;
 	UserMsgSchema g_schema;
 	std::string g_schemaFile;
-	bool g_display = true;          // cli.usermsg on|off
+	bool g_display = true;          // cli.usermsg on|off (recording is unaffected)
 	bool g_pendingReload = false;
 	bool g_reported = false;        // hook-state summary printed once per (re)load
 	size_t g_maxString = 64;
@@ -411,7 +429,7 @@ namespace
 
 	// ---------------------------------------------------------------- print
 
-	void PrintMessage(const UserMsgDef& def, int iSize, void* pbuf)
+	std::string FormatMessage(const UserMsgDef& def, int iSize, void* pbuf)
 	{
 		char b[64];
 		_snprintf_s(b, sizeof(b), _TRUNCATE, " size=%d", iSize);
@@ -445,7 +463,21 @@ namespace
 					line += " ...";
 			}
 		}
+		return line;
+	}
 
+	void RecordEvent(std::string line)
+	{
+		if (g_events.size() >= kMaxEvents)
+			g_events.pop_front();
+		g_events.push_back({ g_nextSeq, std::move(line) });
+		++g_nextSeq;
+	}
+
+	void PrintMessage(const UserMsgDef& def, int iSize, void* pbuf)
+	{
+		std::string line = FormatMessage(def, iSize, pbuf);
+		RecordEvent(line);
 		gEngfuncs.Con_Printf("%s\n", line.c_str());
 	}
 
@@ -492,6 +524,19 @@ namespace
 		if (g_schemaFile.empty())
 			g_schemaFile = DefaultSchemaFile();
 
+		// The engine's usermsg entries still carry our dispatcher from the
+		// previous schema, and the wrapped originals live only in g_entries;
+		// carry them across the rebuild (and hand back the hooks of messages
+		// dropped from the schema), or the game DLL would stop receiving them.
+		std::map<std::string, pfnUserMsgHook> oldOriginals;
+		std::vector<std::string> oldNames;
+		for (const HookEntry& e : g_entries)
+		{
+			oldNames.push_back(e.def->name);
+			if (e.original)
+				oldOriginals[LowerName(e.def->name.c_str())] = e.original;
+		}
+
 		g_schema.Load(g_schemaFile);
 
 		g_entries.clear();
@@ -499,7 +544,21 @@ namespace
 		{
 			HookEntry e;
 			e.def = &def;
+			auto it = oldOriginals.find(LowerName(def.name.c_str()));
+			if (it != oldOriginals.end())
+			{
+				e.original = it->second;
+				e.known = true;
+			}
 			g_entries.push_back(e);
+		}
+		for (const std::string& name : oldNames)
+		{
+			if (g_schema.index.count(LowerName(name.c_str())))
+				continue;
+			auto it = oldOriginals.find(LowerName(name.c_str()));
+			if (it != oldOriginals.end())
+				g_pMetaHookAPI->HookUserMsg(name.c_str(), it->second);
 		}
 		g_reported = false;
 
@@ -571,9 +630,127 @@ namespace UserMsgMonitor
 	void Shutdown()
 	{
 		g_entries.clear();
+		g_events.clear();
 		g_schema.messages.clear();
 		g_schema.index.clear();
 		g_reported = false;
+	}
+
+	// Case-insensitive match of the message-name portion of an event line
+	// ("[usermsg] Name size=...").
+	bool EventNameMatches(const std::string& line, const char* filter)
+	{
+		if (!*filter)
+			return true;
+		static const char kPrefix[] = "[usermsg] ";
+		constexpr size_t kPrefixLen = sizeof(kPrefix) - 1;
+		if (line.compare(0, kPrefixLen, kPrefix) != 0)
+			return false;
+		size_t end = line.find(' ', kPrefixLen);
+		if (end == std::string::npos)
+			end = line.size();
+		size_t len = end - kPrefixLen;
+		return strlen(filter) == len && !_strnicmp(line.c_str() + kPrefixLen, filter, len);
+	}
+
+	void CmdUserMsgEvents()
+	{
+		uint64_t since = 0;
+		bool haveSince = false;
+		size_t limit = 20;
+		const char* nameFilter = "";
+
+		for (int i = 2; i + 1 < gEngfuncs.Cmd_Argc(); i += 2)
+		{
+			const char* key = gEngfuncs.Cmd_Argv(i);
+			if (!_stricmp(key, "since"))
+			{
+				since = _strtoui64(gEngfuncs.Cmd_Argv(i + 1), nullptr, 10);
+				haveSince = true;
+			}
+			else if (!_stricmp(key, "limit"))
+				limit = (size_t)atol(gEngfuncs.Cmd_Argv(i + 1));
+			else if (!_stricmp(key, "name"))
+				nameFilter = gEngfuncs.Cmd_Argv(i + 1);
+		}
+		if (limit < 1)
+			limit = 1;
+		if (limit > 200)
+			limit = 200;
+		// No explicit cursor: show the tail of the ring.
+		if (!haveSince && g_nextSeq > limit)
+			since = g_nextSeq - limit - 1;
+
+		char b[96];
+		_snprintf_s(b, sizeof(b), _TRUNCATE, "cli.usermsg: events newest=%llu name=%s",
+			(unsigned long long)(g_nextSeq - 1), *nameFilter ? nameFilter : "*");
+		gEngfuncs.Con_Printf("%s\n", b);
+
+		size_t shown = 0, more = 0;
+		size_t bytes = 0;
+		uint64_t lastShown = 0;
+		for (const UserMsgEvent& e : g_events)
+		{
+			if (e.seq <= since)
+				continue;
+			if (!EventNameMatches(e.line, nameFilter))
+				continue;
+			if (shown >= limit)
+			{
+				++more;
+				continue;
+			}
+			char nb[32];
+			_snprintf_s(nb, sizeof(nb), _TRUNCATE, "#%llu ", (unsigned long long)e.seq);
+			std::string out = nb;
+			out += e.line;
+			if (shown > 0 && bytes + out.size() + 1 > kReplyByteBudget)
+			{
+				++more;
+				continue;
+			}
+			bytes += out.size() + 1;
+			gEngfuncs.Con_Printf("%s\n", out.c_str());
+			++shown;
+			lastShown = e.seq;
+		}
+		if (!shown)
+			gEngfuncs.Con_Printf("cli.usermsg: no matching events\n");
+		else if (more)
+		{
+			_snprintf_s(b, sizeof(b), _TRUNCATE, "cli.usermsg: %u more after #%llu (raise since)",
+				(unsigned)more, (unsigned long long)lastShown);
+			gEngfuncs.Con_Printf("%s\n", b);
+		}
+	}
+
+	void CmdUserMsgList()
+	{
+		size_t bytes = 0, shown = 0;
+		for (const HookEntry& e : g_entries)
+		{
+			std::string line = !e.known ? "pending " : (e.original ? "wrapped " : "self    ");
+			line += e.def->name;
+			if (e.def->raw)
+				line += " (raw)";
+			else
+			{
+				char nb[32];
+				_snprintf_s(nb, sizeof(nb), _TRUNCATE, " (%u fields)", (unsigned)e.def->fields.size());
+				line += nb;
+			}
+			if (bytes + line.size() + 1 > kReplyByteBudget)
+			{
+				char b[96];
+				_snprintf_s(b, sizeof(b), _TRUNCATE, "cli.usermsg: list truncated at %u of %u messages",
+					(unsigned)shown, (unsigned)g_entries.size());
+				gEngfuncs.Con_Printf("%s\n", b);
+				return;
+			}
+			bytes += line.size() + 1;
+			gEngfuncs.Con_Printf("%s\n", line.c_str());
+			++shown;
+		}
 	}
 
 	void CmdUserMsg()
@@ -584,7 +761,7 @@ namespace UserMsgMonitor
 		if (!_stricmp(arg1, "on") || !_stricmp(arg1, "off"))
 		{
 			g_display = !_stricmp(arg1, "on");
-			gEngfuncs.Con_Printf("cli.usermsg: display %s\n", g_display ? "on" : "off");
+			gEngfuncs.Con_Printf("cli.usermsg: display %s (recording continues)\n", g_display ? "on" : "off");
 			return;
 		}
 		if (!_stricmp(arg1, "reload"))
@@ -599,6 +776,16 @@ namespace UserMsgMonitor
 		if (g_entries.empty())
 		{
 			gEngfuncs.Con_Printf("cli.usermsg: no schema loaded ([usermsg] disabled in halflifecli.toml?)\n");
+			return;
+		}
+		if (!_stricmp(arg1, "events"))
+		{
+			CmdUserMsgEvents();
+			return;
+		}
+		if (!_stricmp(arg1, "list"))
+		{
+			CmdUserMsgList();
 			return;
 		}
 		if (!_stricmp(arg1, "pending"))
@@ -616,7 +803,7 @@ namespace UserMsgMonitor
 				gEngfuncs.Con_Printf("cli.usermsg: no pending messages\n");
 			return;
 		}
-		if (*arg1 && _stricmp(arg1, "list"))
+		if (*arg1)
 		{
 			// cli.usermsg <name>: show one message's field layout.
 			HookEntry* e = FindEntry(arg1);
@@ -626,8 +813,12 @@ namespace UserMsgMonitor
 				return;
 			}
 			const UserMsgDef& def = *e->def;
-			gEngfuncs.Con_Printf("cli.usermsg: %s%s%s%s\n", def.name.c_str(),
-				def.raw ? " (raw)" : "", def.note.empty() ? "" : " - ", def.note.c_str());
+			char b[96];
+			_snprintf_s(b, sizeof(b), _TRUNCATE, "cli.usermsg: %s%s hooks=%s%s%s\n", def.name.c_str(),
+				def.raw ? " (raw)" : "",
+				!e->known ? "pending" : (e->original ? "wrapped" : "self-registered"),
+				def.note.empty() ? "" : " - ", def.note.c_str());
+			gEngfuncs.Con_Printf("%s", b);
 			std::string line;
 			for (const UserMsgField& f : def.fields)
 			{
@@ -643,7 +834,7 @@ namespace UserMsgMonitor
 					line += " [" + std::to_string(f.count) + "]";
 				if (f.hasWhen)
 				{
-					line += f.whenNotEqual ? " when " : " when ";
+					line += " when ";
 					line += f.whenField;
 					line += f.whenNotEqual ? " != " : " == ";
 					line += std::to_string((long long)f.whenValue);
@@ -656,6 +847,6 @@ namespace UserMsgMonitor
 		}
 
 		ReportState();
-		gEngfuncs.Con_Printf("cli.usermsg: usage: on|off|reload|list|pending|<name>\n");
+		gEngfuncs.Con_Printf("cli.usermsg: usage: on|off|reload|list|pending|events [since N] [limit N] [name X]|<name>\n");
 	}
 }

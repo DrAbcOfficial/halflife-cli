@@ -122,6 +122,30 @@ def main():
         for line in lines:
             if "cli.usermsg" in line:
                 print("   |", line)
+
+        proc.send_stdin("cli.usermsg events limit 5")
+        cursor, lines = collect(proc, cursor, 3)
+        text = "\n".join(lines)
+        if "cli.usermsg: events newest=" not in text:
+            failures.append("cli.usermsg events produced no report header")
+        ev_lines = [ln for ln in lines if ln.startswith("#")]
+        print(f"   | events page: {len(ev_lines)} event line(s)")
+        for ln in ev_lines[:5]:
+            print("   |", ln)
+
+        proc.send_stdin("cli.usermsg events limit 5 name CurWeapon")
+        cursor, lines = collect(proc, cursor, 3)
+        bad = [ln for ln in lines if ln.startswith("#") and "[usermsg] CurWeapon" not in ln]
+        if bad:
+            failures.append(f"name filter leaked {len(bad)} non-CurWeapon event(s): {bad[:2]}")
+
+        proc.send_stdin("cli.usermsg list")
+        cursor, lines = collect(proc, cursor, 3)
+        listed = [ln for ln in lines if ln.startswith(("wrapped ", "self    ", "pending "))]
+        if not listed:
+            failures.append("cli.usermsg list produced no per-message lines")
+        else:
+            print(f"   | list: {len(listed)} message line(s)")
     finally:
         print("[test] quitting game ...")
         result = proc.stop()
