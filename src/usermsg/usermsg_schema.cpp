@@ -192,15 +192,16 @@ namespace
 	}
 
 	// Loads one file, following "extends" first (base entries land in the
-	// schema before the child's, so a child replaces by name). Returns false
-	// only when the ROOT file fails; a broken base is reported and also fails
-	// the load, because a partially inherited schema would misparse the wire.
-	bool LoadInternal(const std::string& file, std::set<std::string>& visited, bool root, UserMsgSchema& schema)
+	// schema before the child's, so a child replaces by name). Returns
+	// Missing only when the ROOT file does not exist; every other failure
+	// (broken extends base, parse error) reports as Error, because a
+	// partially inherited schema would misparse the wire.
+	UserMsgSchema::LoadResult LoadInternal(const std::string& file, std::set<std::string>& visited, bool root, UserMsgSchema& schema)
 	{
 		if (!visited.insert(text::Lowercase(file)).second)
 		{
 			gEngfuncs.Con_Printf("halflife-cli: usermsg schema cycle detected at \"%s\"\n", file.c_str());
-			return false;
+			return UserMsgSchema::LoadResult::Error;
 		}
 
 		toml::table tbl;
@@ -209,13 +210,15 @@ namespace
 		{
 			gEngfuncs.Con_Printf("halflife-cli: usermsg schema \"%s%s%s\" %s\n",
 				kSchemaDir, file.c_str(), root ? "" : " (extends)", err.c_str());
-			return false;
+			if (root && err == "file not found")
+				return UserMsgSchema::LoadResult::Missing;
+			return UserMsgSchema::LoadResult::Error;
 		}
 
 		if (auto extends = tbl["extends"].value<std::string_view>())
 		{
-			if (!extends->empty() && !LoadInternal(std::string(*extends), visited, false, schema))
-				return false;
+			if (!extends->empty() && LoadInternal(std::string(*extends), visited, false, schema) != UserMsgSchema::LoadResult::Loaded)
+				return UserMsgSchema::LoadResult::Error;
 		}
 
 		if (const toml::table* primitives = tbl["primitives"].as_table())
@@ -240,7 +243,7 @@ namespace
 				if (!ParseMessage(*t, def, err))
 				{
 					gEngfuncs.Con_Printf("halflife-cli: usermsg schema \"%s\": %s\n", file.c_str(), err.c_str());
-					return false;
+					return UserMsgSchema::LoadResult::Error;
 				}
 				auto it = schema.index.find(text::Lowercase(def.name));
 				if (it != schema.index.end())
@@ -258,18 +261,18 @@ namespace
 				}
 			}
 		}
-		return true;
+		return UserMsgSchema::LoadResult::Loaded;
 	}
 }
 
-bool UserMsgSchema::Load(const std::string& file)
+UserMsgSchema::LoadResult UserMsgSchema::Load(const std::string& file)
 {
 	coord_size = 2;
 	messages.clear();
 	index.clear();
 
 	std::set<std::string> visited;
-	bool ok = LoadInternal(file, visited, true, *this);
+	LoadResult result = LoadInternal(file, visited, true, *this);
 
 	// Anything still unnamed (no "channel" key here or in an inherited base)
 	// records under the default channel.
@@ -278,5 +281,5 @@ bool UserMsgSchema::Load(const std::string& file)
 		if (def.channel.empty())
 			def.channel = kDefaultChannel;
 	}
-	return ok;
+	return result;
 }

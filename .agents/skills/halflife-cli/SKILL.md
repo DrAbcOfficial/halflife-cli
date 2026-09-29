@@ -105,7 +105,9 @@ a TOML schema (one file per `-game` folder in
 `configs/usermsgs/`) and records the last 512 per channel into a
 channel-keyed event ring. A message's channel is its functional group from
 the schema's `channel` key (weapon, status, text, score, screen, world, hud,
-meta; untagged ones land in "usermsg"). Watch traffic with
+meta; untagged ones land in "usermsg"). A missing mod schema disables
+usermsg collection (notice on the console; install the schema, then
+`cli.usermsg reload` or a map change re-enables it). Watch traffic with
 `usermsg_events(since_seq=..., name=..., channel=...)` (page forward with
 `since_seq=<previous>.newest_seq`) or, without MCP, `cli.usermsg events
 [channel C|all] [since N] [limit N] [name X]` over RCON/stdin; `cli.usermsg`

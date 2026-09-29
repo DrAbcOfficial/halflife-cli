@@ -42,6 +42,10 @@ struct UserMsgSchema
 	// does not name one.
 	static constexpr const char* kDefaultChannel = "usermsg";
 
+	// Missing: the root schema file does not exist (a missing extends base
+	// counts as Error — the mod schema is there, the install is broken).
+	enum class LoadResult { Loaded, Missing, Error };
+
 	int coord_size = 2;        // bytes of "coord": 2 = short*1/8 (hl, cstrike), 4 = long*1/8 (svencoop)
 	std::vector<UserMsgDef> messages;
 	std::map<std::string, size_t> index;  // lowercased name -> position in messages
@@ -51,7 +55,6 @@ struct UserMsgSchema
 	// message carries the functional group named by its optional "channel"
 	// key; an override without one inherits the base's, and whatever is left
 	// empty falls back to kDefaultChannel.
-	// Returns false when the root file is missing or unparsable; details are
-	// printed through Con_Printf.
-	bool Load(const std::string& file);
+	// Details of failures are printed through Con_Printf.
+	LoadResult Load(const std::string& file);
 };

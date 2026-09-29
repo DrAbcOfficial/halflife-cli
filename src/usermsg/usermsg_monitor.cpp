@@ -46,6 +46,7 @@ namespace
 	bool g_display = true;          // cli.usermsg on|off (master gate; recording is unaffected)
 	bool g_pendingReload = false;
 	bool g_reported = false;        // hook-state summary printed once per (re)load
+	bool g_schemaMissing = false;   // root schema file absent; monitoring disabled until reload
 	size_t g_maxString = 64;
 
 	// g_entries parallels g_schema.messages; the map lookup answers both.
@@ -195,21 +196,35 @@ namespace
 				oldOriginals[text::Lowercase(e.def->name.c_str())] = e.original;
 		}
 
-		g_schema.Load(g_schemaFile);
+		UserMsgSchema::LoadResult result = g_schema.Load(g_schemaFile);
 
 		g_entries.clear();
-		for (const UserMsgDef& def : g_schema.messages)
+		if (result == UserMsgSchema::LoadResult::Missing)
 		{
-			HookEntry e;
-			e.def = &def;
-			auto it = oldOriginals.find(text::Lowercase(def.name.c_str()));
-			if (it != oldOriginals.end())
-			{
-				e.original = it->second;
-				e.known = true;
-			}
-			g_entries.push_back(e);
+			// No schema for this mod: report once and switch the monitor off
+			// (nothing is hooked or recorded). A later reload that finds the
+			// file re-enables it.
+			g_schemaMissing = true;
 		}
+		else
+		{
+			g_schemaMissing = false;
+			for (const UserMsgDef& def : g_schema.messages)
+			{
+				HookEntry e;
+				e.def = &def;
+				auto it = oldOriginals.find(text::Lowercase(def.name.c_str()));
+				if (it != oldOriginals.end())
+				{
+					e.original = it->second;
+					e.known = true;
+				}
+				g_entries.push_back(e);
+			}
+		}
+		// Hand back the hooks of messages no longer monitored — on both
+		// paths (a reload that shrank the schema, and the missing-schema
+		// shutdown), or the game DLL would stop receiving them.
 		for (const std::string& name : oldNames)
 		{
 			if (g_schema.index.count(text::Lowercase(name.c_str())))
@@ -219,6 +234,14 @@ namespace
 				g_pMetaHookAPI->HookUserMsg(name.c_str(), it->second);
 		}
 		g_reported = false;
+
+		if (result == UserMsgSchema::LoadResult::Missing)
+		{
+			gEngfuncs.Con_Printf("halflife-cli: usermsg monitoring disabled "
+				"(no schema for this mod; install one into metahook/configs/usermsgs/"
+				" and run \"cli.usermsg reload\")\n");
+			return;
+		}
 
 		char b[160];
 		_snprintf_s(b, sizeof(b), _TRUNCATE, "halflife-cli: usermsg schema \"%s\" loaded (%u messages)",
@@ -292,6 +315,7 @@ namespace UserMsgMonitor
 		g_schema.messages.clear();
 		g_schema.index.clear();
 		g_reported = false;
+		g_schemaMissing = false;
 	}
 
 	// Case-insensitive match of the message-name portion of an event line
@@ -441,7 +465,14 @@ namespace UserMsgMonitor
 		}
 		if (g_entries.empty())
 		{
-			gEngfuncs.Con_Printf("cli.usermsg: no schema loaded ([usermsg] disabled in halflifecli.toml?)\n");
+			if (!CLI_Config().usermsg_enabled)
+				gEngfuncs.Con_Printf("cli.usermsg: no schema loaded ([usermsg] disabled in halflifecli.toml?)\n");
+			else if (g_schemaMissing)
+				gEngfuncs.Con_Printf("cli.usermsg: monitoring disabled - schema \"%s\" not found "
+					"(install it into metahook/configs/usermsgs/, then run \"cli.usermsg reload\")\n",
+					g_schemaFile.c_str());
+			else
+				gEngfuncs.Con_Printf("cli.usermsg: no schema loaded\n");
 			return;
 		}
 		if (!_stricmp(arg1, "events"))

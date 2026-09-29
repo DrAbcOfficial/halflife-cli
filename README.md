@@ -112,6 +112,11 @@ cli.usermsg list|pending|<name>          # per-message state / channel / field l
 cli.usermsg reload                       # re-read the schema TOML
 ```
 
+If the schema file for the running mod does not exist, the plugin prints a
+notice and disables usermsg collection entirely (nothing is hooked or
+recorded). Installing the schema and running `cli.usermsg reload` — or just
+changing maps, which re-runs the load — re-enables it.
+
 Schemas live in `svencoop\metahook\configs\usermsgs\<gamedir>.toml`
 (`configs/usermsgs/` in the repo, installed by `install_plugin.bat`). One file
 per `-game` folder: `valve.toml` (Half-Life), `cstrike.toml`,
