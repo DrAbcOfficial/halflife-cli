@@ -1,0 +1,429 @@
+# Counter-Strike 1.x (mod dir: cstrike) UserMsg wire formats.
+#
+# Transcribed from .zcode/networkmessages/cstrike-10210/usermessages.md
+# (cstrike client.so, reverse engineered; every message verified by
+# decompilation).
+#
+# Only messages whose wire format differs from Half-Life, plus CS-specific
+# messages, are defined here; everything else is inherited from valve.toml.
+
+extends = "valve.toml"
+
+# ------------------------------------------------------------- wire differs
+
+[[usermsg]]
+name = "SayText"
+note = "CS reads 4 extra format-parameter strings"
+fields = [
+	{ name = "client", type = "byte" },
+	{ name = "text", type = "string" },
+	{ name = "s1", type = "string", note = "%s replacement; empty = player name" },
+	{ name = "s2", type = "string" },
+	{ name = "s3", type = "string" },
+	{ name = "s4", type = "string" },
+]
+
+[[usermsg]]
+name = "HudText"
+fields = [
+	{ name = "messageName", type = "string" },
+	{ name = "hintFlag", type = "byte", note = "!=0 = hint style" },
+]
+
+[[usermsg]]
+name = "HudTextPro"
+note = "HudText with the NewFont slot"
+fields = [
+	{ name = "messageName", type = "string" },
+	{ name = "hintFlag", type = "byte" },
+]
+
+[[usermsg]]
+name = "HudTextArgs"
+fields = [
+	{ name = "messageName", type = "string" },
+	{ name = "hintFlag", type = "byte" },
+	{ name = "numArgs", type = "byte", note = "0..4" },
+	{ name = "arg", type = "string", count = "numArgs" },
+]
+
+[[usermsg]]
+name = "DeathMsg"
+fields = [
+	{ name = "killer", type = "byte" },
+	{ name = "victim", type = "byte" },
+	{ name = "headshot", type = "byte" },
+	{ name = "weapon", type = "string", note = "e.g. d_ak47" },
+]
+
+[[usermsg]]
+name = "TeamScore"
+fields = [
+	{ name = "teamName", type = "string" },
+	{ name = "score", type = "short" },
+]
+
+[[usermsg]]
+name = "TextMsg"
+note = "dest==5 (chat to a player) carries an extra index string first"
+fields = [
+	{ name = "dest", type = "byte" },
+	{ name = "playerIdx", type = "string", when = { field = "dest", eq = 5 } },
+	{ name = "param1", type = "string" },
+	{ name = "param2", type = "string" },
+	{ name = "param3", type = "string" },
+	{ name = "param4", type = "string" },
+	{ name = "param5", type = "string" },
+]
+
+[[usermsg]]
+name = "StatusIcon"
+note = "status: 0=hide 1=show 2=flash"
+fields = [
+	{ name = "status", type = "byte" },
+	{ name = "icon", type = "string" },
+	{ name = "rgb", type = "byte", count = 3, when = { field = "status", ne = 0 } },
+]
+
+[[usermsg]]
+name = "Logo"
+note = "unused in HL; CS actually reads a byte"
+fields = [
+	{ name = "logoFlags", type = "byte" },
+]
+
+# ------------------------------------------------------------ CS-specific
+
+[[usermsg]]
+name = "Money"
+fields = [
+	{ name = "dollars", type = "long" },
+	{ name = "deltaFlag", type = "byte", note = "!=0 = show change animation" },
+]
+
+[[usermsg]]
+name = "Account"
+note = "scoreboard balance"
+fields = [
+	{ name = "playerIndex", type = "byte", note = "1..64" },
+	{ name = "account", type = "long" },
+]
+
+[[usermsg]]
+name = "BlinkAcct"
+fields = [
+	{ name = "blinkCount", type = "byte" },
+]
+
+[[usermsg]]
+name = "HealthInfo"
+note = "scoreboard health"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "health", type = "long" },
+]
+
+[[usermsg]]
+name = "ArmorType"
+fields = [
+	{ name = "armorType", type = "byte", note = "0=none 1=kevlar 2=kevlar+helmet" },
+]
+
+[[usermsg]]
+name = "ScoreAttrib"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "flags", type = "byte", note = "bit0=dead bit1=c4 bit2=vip bit3=defuser" },
+]
+
+[[usermsg]]
+name = "ItemStatus"
+fields = [
+	{ name = "bitmask", type = "byte", note = "bit0=nightvision bit1=defuser" },
+]
+
+[[usermsg]]
+name = "Radar"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "origin", type = "vec3" },
+]
+
+[[usermsg]]
+name = "BombDrop"
+fields = [
+	{ name = "origin", type = "vec3" },
+	{ name = "flag", type = "byte", note = "1=C4 planted, hide countdown" },
+]
+
+[[usermsg]]
+name = "BombPickup"
+fields = []
+
+[[usermsg]]
+name = "ADStop"
+note = "stop spectator auto-director"
+fields = []
+
+[[usermsg]]
+name = "HostagePos"
+fields = [
+	{ name = "show", type = "byte", note = "1=blink on radar" },
+	{ name = "index", type = "byte", note = "<=24" },
+	{ name = "origin", type = "vec3" },
+]
+
+[[usermsg]]
+name = "HostageK"
+fields = [
+	{ name = "index", type = "byte", note = "<=24" },
+]
+
+[[usermsg]]
+name = "ShowTimer"
+fields = []
+
+[[usermsg]]
+name = "RoundTime"
+fields = [
+	{ name = "seconds", type = "short", note = "0=hide" },
+]
+
+[[usermsg]]
+name = "BarTime"
+fields = [
+	{ name = "duration", type = "short", note = "0=hide" },
+]
+
+[[usermsg]]
+name = "BarTime2"
+fields = [
+	{ name = "duration", type = "short" },
+	{ name = "elapsedPercent", type = "short" },
+]
+
+[[usermsg]]
+name = "Scenario"
+fields = [
+	{ name = "show", type = "byte" },
+	{ name = "info", type = "group", when = { field = "show", ne = 0 }, fields = [
+		{ name = "sprite", type = "string" },
+		{ name = "flashAlpha", type = "byte", note = ">=99 clamps to 100" },
+		{ name = "timing", type = "group", when = { field = "flashAlpha", ne = 100 }, fields = [
+			{ name = "flashInterval", type = "short", note = "*0.01" },
+			{ name = "nextFlashOffset", type = "short", note = "*0.01" },
+		] },
+	] },
+]
+
+[[usermsg]]
+name = "TaskTime"
+fields = [
+	{ name = "period", type = "short", note = "<-1 = task complete" },
+	{ name = "countdown", type = "byte" },
+	{ name = "fadeDelay", type = "byte" },
+]
+
+[[usermsg]]
+name = "ClCorpse"
+fields = [
+	{ name = "model", type = "string" },
+	{ name = "a", type = "long", note = "*1/128" },
+	{ name = "b", type = "long", note = "*1/128" },
+	{ name = "c", type = "long", note = "*1/128" },
+	{ name = "origin", type = "vec3" },
+	{ name = "animBase", type = "long", note = "/100 + client time" },
+	{ name = "pitch", type = "byte" },
+	{ name = "yaw", type = "byte" },
+	{ name = "team", type = "byte", note = "1=T 2=CT" },
+	{ name = "playerIndex", type = "byte" },
+]
+
+[[usermsg]]
+name = "Brass"
+note = "cstrike variant; czero drops the first/last bytes"
+fields = [
+	{ name = "unused", type = "byte" },
+	{ name = "origin", type = "vec3" },
+	{ name = "velocity", type = "vec3" },
+	{ name = "right", type = "vec3" },
+	{ name = "rotation", type = "angle" },
+	{ name = "modelIndex", type = "short" },
+	{ name = "soundType", type = "byte" },
+	{ name = "unused2", type = "byte" },
+	{ name = "entIndex", type = "byte" },
+]
+
+[[usermsg]]
+name = "Fog"
+fields = [
+	{ name = "r", type = "byte" },
+	{ name = "g", type = "byte" },
+	{ name = "b", type = "byte" },
+	{ name = "density", type = "byte", count = 4, note = "4 bytes = 32-bit float bit pattern" },
+	{ name = "enable", type = "byte", note = "0=clear fog" },
+]
+
+[[usermsg]]
+name = "ReceiveW"
+fields = [
+	{ name = "weatherType", type = "byte" },
+]
+
+[[usermsg]]
+name = "NVGToggle"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "ReloadSound"
+fields = [
+	{ name = "volume", type = "byte", note = "/255" },
+	{ name = "weaponType", type = "byte", note = "0=shotgun reload" },
+]
+
+[[usermsg]]
+name = "Crosshair"
+note = "spectator crosshair"
+fields = [
+	{ name = "state", type = "byte" },
+]
+
+[[usermsg]]
+name = "ShadowIdx"
+fields = [
+	{ name = "spriteIndex", type = "long" },
+]
+
+[[usermsg]]
+name = "SpecHealth"
+fields = [
+	{ name = "health", type = "byte" },
+]
+
+[[usermsg]]
+name = "SpecHealth2"
+fields = [
+	{ name = "health", type = "byte" },
+	{ name = "playerIndex", type = "byte" },
+]
+
+[[usermsg]]
+name = "ForceCam"
+fields = [
+	{ name = "forceCamera", type = "byte" },
+	{ name = "forceChaseCam", type = "byte" },
+	{ name = "fadeToBlack", type = "byte" },
+]
+
+[[usermsg]]
+name = "Location"
+fields = [
+	{ name = "playerIndex", type = "byte", note = "1..64" },
+	{ name = "location", type = "string", note = "<=31 chars" },
+]
+
+[[usermsg]]
+name = "HLTV"
+fields = [
+	{ name = "playerIndex", type = "byte", note = "0=broadcast to all" },
+	{ name = "data", type = "byte", note = "bit7: 1=health(data&0x7F) 0=FOV" },
+]
+
+[[usermsg]]
+name = "SendAudio"
+fields = [
+	{ name = "sender", type = "byte" },
+	{ name = "sound", type = "string" },
+	{ name = "pitch", type = "short" },
+]
+
+[[usermsg]]
+name = "TutorText"
+fields = [
+	{ name = "token", type = "string" },
+	{ name = "numArgs", type = "byte" },
+	{ name = "arg", type = "string", count = "numArgs" },
+	{ name = "a", type = "short" },
+	{ name = "b", type = "short" },
+	{ name = "c", type = "short" },
+]
+
+[[usermsg]]
+name = "TutorState"
+fields = [
+	{ name = "token", type = "string" },
+]
+
+[[usermsg]]
+name = "TutorLine"
+fields = [
+	{ name = "entIndex", type = "short" },
+	{ name = "id", type = "short" },
+]
+
+[[usermsg]]
+name = "TutorClose"
+fields = []
+
+[[usermsg]]
+name = "BotVoice"
+fields = [
+	{ name = "status", type = "byte" },
+	{ name = "entIndex", type = "byte" },
+]
+
+[[usermsg]]
+name = "BotProgress"
+fields = [
+	{ name = "cmd", type = "byte" },
+	{ name = "progressInfo", type = "group", when = { field = "cmd", eq = 0 }, fields = [
+		{ name = "progress", type = "byte" },
+		{ name = "type", type = "string" },
+	] },
+	{ name = "type", type = "string", when = { field = "cmd", eq = 1 } },
+]
+
+[[usermsg]]
+name = "CZCareerHUD"
+fields = [
+	{ name = "type", type = "string", note = "MATCH|ROUND" },
+	{ name = "ctWins", type = "long" },
+	{ name = "tWins", type = "long" },
+	{ name = "neededWins", type = "byte" },
+	{ name = "winBy", type = "byte" },
+	{ name = "roundResult", type = "byte" },
+]
+
+[[usermsg]]
+name = "BuyClose"
+fields = []
+
+# ------------------------------------------- engine-built-in (same dispatch)
+
+[[usermsg]]
+name = "ScreenShake"
+note = "engine-handled (not via the game DLL)"
+fields = [
+	{ name = "amplitude", type = "short" },
+	{ name = "duration", type = "short" },
+	{ name = "frequency", type = "short" },
+]
+
+[[usermsg]]
+name = "ScreenFade"
+note = "engine-handled (not via the game DLL)"
+fields = [
+	{ name = "duration", type = "short" },
+	{ name = "holdTime", type = "short" },
+	{ name = "flags", type = "short" },
+	{ name = "r", type = "byte" },
+	{ name = "g", type = "byte" },
+	{ name = "b", type = "byte" },
+	{ name = "a", type = "byte" },
+]
+
+# Registered by cs.so but with no client hook (engine prints "UserMsg: Not
+# Present" and drops them); hooked display-only by the monitor:
+#   CZCareer, Weapon

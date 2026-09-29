@@ -1,0 +1,593 @@
+# Sven Co-op (mod dir: svencoop) UserMsg wire formats, build 10257.
+#
+# Transcribed from .zcode/networkmessages/svencoop-10257/usermessages.md
+# (server.so 87 registrations + client.so 86 hooks, reverse engineered with
+# path-sensitive CFG verification).
+#
+# Only messages whose wire format differs from Half-Life, plus Sven-specific
+# messages, are defined here; everything else is inherited from valve.toml.
+# The engine-dialect change that matters most: usermsg READ_COORD is a
+# 32-bit long * 1/8 (not the 16-bit short * 1/8 of hl/cstrike), which also
+# makes the inherited Damage definition (byte byte long vec3) correct.
+
+extends = "valve.toml"
+
+[primitives]
+coord_size = 4    # READ_COORD = long * 1/8 (svencoop usermsg-layer convention)
+
+# ------------------------------------------------------------- wire differs
+
+[[usermsg]]
+name = "CurWeapon"
+note = "10257: weapon id and clip widened"
+fields = [
+	{ name = "state", type = "byte" },
+	{ name = "weaponId", type = "short" },
+	{ name = "clip", type = "long", note = "-1=no magazine" },
+	{ name = "aux", type = "long", note = "unknown 4-byte tail" },
+]
+
+[[usermsg]]
+name = "Health"
+fields = [
+	{ name = "health", type = "long" },
+]
+
+[[usermsg]]
+name = "WeaponList"
+note = "ammo types/max widened to long, slot to short"
+fields = [
+	{ name = "name", type = "string" },
+	{ name = "ammo1Type", type = "char", note = "-1=none" },
+	{ name = "ammo1Max", type = "long" },
+	{ name = "ammo2Type", type = "char" },
+	{ name = "ammo2Max", type = "long" },
+	{ name = "bucket", type = "char" },
+	{ name = "bucketPosition", type = "char" },
+	{ name = "slot", type = "short" },
+	{ name = "flags", type = "byte" },
+]
+
+[[usermsg]]
+name = "ScoreInfo"
+note = "10257 layout (20 bytes); field semantics past frags not fully identified"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "frags", type = "float" },
+	{ name = "v3", type = "long" },
+	{ name = "v4", type = "float" },
+	{ name = "v5", type = "float" },
+	{ name = "v6", type = "byte" },
+	{ name = "v7", type = "byte" },
+	{ name = "v8", type = "byte" },
+]
+
+[[usermsg]]
+name = "AmmoPickup"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "count", type = "long" },
+]
+
+[[usermsg]]
+name = "WeapPickup"
+fields = [
+	{ name = "index", type = "short" },
+]
+
+[[usermsg]]
+name = "AmmoX"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "count", type = "long" },
+]
+
+[[usermsg]]
+name = "HideHUD"
+note = "renamed HideWeapon; widened to short in 10257"
+fields = [
+	{ name = "hideBits", type = "short" },
+]
+
+[[usermsg]]
+name = "TeamNames"
+note = "each team also carries a vector"
+fields = [
+	{ name = "numTeams", type = "byte" },
+	{ name = "team", type = "group", count = "numTeams", fields = [
+		{ name = "teamName", type = "string" },
+		{ name = "vec", type = "vec3" },
+	] },
+]
+
+[[usermsg]]
+name = "Concuss"
+fields = [
+	{ name = "v1", type = "float" },
+	{ name = "v2", type = "float" },
+	{ name = "v3", type = "float" },
+]
+
+[[usermsg]]
+name = "ViewMode"
+fields = [
+	{ name = "mode", type = "byte" },
+]
+
+[[usermsg]]
+name = "VoiceMask"
+note = "svencoop registers 8 bytes (no mod-enable byte)"
+fields = [
+	{ name = "audiblePlayers", type = "long" },
+	{ name = "bannedPlayers", type = "long" },
+]
+
+# ------------------------------------------------------------ Sven-specific
+
+[[usermsg]]
+name = "CustWeapon"
+fields = [
+	{ name = "weaponId", type = "short" },
+	{ name = "name", type = "string" },
+]
+
+[[usermsg]]
+name = "CdAudio"
+fields = [
+	{ name = "track", type = "byte" },
+]
+
+[[usermsg]]
+name = "Speaksent"
+fields = [
+	{ name = "speaker", type = "string" },
+]
+
+[[usermsg]]
+name = "TimeEnd"
+fields = [
+	{ name = "seconds", type = "long" },
+]
+
+[[usermsg]]
+name = "MapList"
+note = "wire-verified on 10257: kind 0 = first page (total + map names), kind 1 = further pages (current, total, names), kind 0x7B ends"
+fields = [
+	{ name = "kind", type = "byte" },
+	{ name = "page", type = "group", when = { field = "kind", eq = 1 }, fields = [
+		{ name = "current", type = "short" },
+		{ name = "total", type = "short" },
+		{ name = "mapName", type = "string", count = "*" },
+	] },
+	{ name = "announce", type = "group", when = { field = "kind", eq = 0 }, fields = [
+		{ name = "total", type = "short" },
+		{ name = "mapName", type = "string", count = "*" },
+	] },
+]
+
+[[usermsg]]
+name = "CbElec"
+fields = [
+	{ name = "state", type = "byte" },
+]
+
+[[usermsg]]
+name = "EndVote"
+fields = []
+
+[[usermsg]]
+name = "VoteMenu"
+note = "question byte + up to 4 option strings"
+fields = [
+	{ name = "question", type = "byte" },
+	{ name = "option1", type = "string" },
+	{ name = "option2", type = "string" },
+	{ name = "option3", type = "string" },
+	{ name = "option4", type = "string" },
+]
+
+[[usermsg]]
+name = "NextMap"
+fields = [
+	{ name = "mapName", type = "string" },
+]
+
+[[usermsg]]
+name = "ToxicCloud"
+fields = [
+	{ name = "origin", type = "vec3" },
+]
+
+[[usermsg]]
+name = "ShkFlash"
+fields = [
+	{ name = "origin", type = "vec3" },
+	{ name = "b", type = "byte" },
+]
+
+[[usermsg]]
+name = "CreateBlood"
+fields = [
+	{ name = "origin", type = "vec3" },
+	{ name = "b1", type = "byte" },
+	{ name = "b2", type = "byte" },
+]
+
+[[usermsg]]
+name = "GargSplash"
+note = "server registers 12 bytes but sends 24; the client read order is authoritative"
+fields = [
+	{ name = "origin", type = "vec3" },
+	{ name = "dir", type = "vec3" },
+]
+
+[[usermsg]]
+name = "SporeTrail"
+fields = [
+	{ name = "v1", type = "short" },
+	{ name = "b", type = "byte" },
+]
+
+[[usermsg]]
+name = "TracerDecal"
+fields = [
+	{ name = "start", type = "vec3" },
+	{ name = "end", type = "vec3" },
+	{ name = "b1", type = "byte" },
+	{ name = "b2", type = "byte" },
+]
+
+[[usermsg]]
+name = "SRDetonate"
+fields = [
+	{ name = "origin", type = "vec3" },
+	{ name = "b", type = "byte" },
+]
+
+[[usermsg]]
+name = "SRPrimed"
+fields = [
+	{ name = "b", type = "byte" },
+	{ name = "f", type = "float" },
+]
+
+[[usermsg]]
+name = "SRPrimedOff"
+fields = [
+	{ name = "b", type = "byte" },
+]
+
+[[usermsg]]
+name = "ShieldRic"
+fields = [
+	{ name = "origin", type = "vec3" },
+]
+
+[[usermsg]]
+name = "Playlist"
+fields = [
+	{ name = "name", type = "string" },
+]
+
+[[usermsg]]
+name = "ServerVer"
+fields = [
+	{ name = "version", type = "string" },
+]
+
+[[usermsg]]
+name = "ServerBuild"
+fields = [
+	{ name = "build", type = "string" },
+]
+
+[[usermsg]]
+name = "WeatherFX"
+note = "68-byte fixed layout"
+fields = [
+	{ name = "type", type = "short" },
+	{ name = "pos1", type = "vec3" },
+	{ name = "pos2", type = "vec3" },
+	{ name = "angles", type = "angle", count = 3 },
+	{ name = "s1", type = "short" },
+	{ name = "f1", type = "float" },
+	{ name = "b1", type = "byte" },
+	{ name = "s2", type = "short" },
+	{ name = "f2", type = "float" },
+	{ name = "b2", type = "byte" },
+	{ name = "b3", type = "byte" },
+	{ name = "f3", type = "float" },
+	{ name = "b4", type = "byte" },
+	{ name = "b5", type = "byte" },
+	{ name = "b6", type = "byte" },
+	{ name = "b7", type = "byte" },
+	{ name = "f4", type = "float" },
+	{ name = "f5", type = "float" },
+	{ name = "f6", type = "float" },
+	{ name = "f7", type = "float" },
+]
+
+[[usermsg]]
+name = "CameraMouse"
+fields = [
+	{ name = "mode", type = "byte" },
+	{ name = "arg", type = "string", when = { field = "mode", eq = 2 } },
+]
+
+[[usermsg]]
+name = "Fog"
+fields = [
+	{ name = "v1", type = "short" },
+	{ name = "b1", type = "byte" },
+	{ name = "vec1", type = "vec3" },
+	{ name = "v2", type = "short" },
+	{ name = "b2", type = "byte" },
+	{ name = "b3", type = "byte" },
+	{ name = "b4", type = "byte" },
+	{ name = "v3", type = "short" },
+	{ name = "v4", type = "short" },
+]
+
+[[usermsg]]
+name = "PrtlUpdt"
+note = "10257 expanded layout (75-byte union); linear read order listed by the RE docs"
+fields = [
+	{ name = "v1", type = "long" },
+	{ name = "b1", type = "byte" },
+	{ name = "vec1", type = "vec3" },
+	{ name = "vec2", type = "vec3" },
+	{ name = "b2", type = "byte" },
+	{ name = "b3", type = "byte" },
+	{ name = "f1", type = "float" },
+	{ name = "b4", type = "byte" },
+	{ name = "l1", type = "long" },
+	{ name = "l2", type = "long" },
+	{ name = "b5", type = "byte" },
+	{ name = "s1", type = "string" },
+	{ name = "b6", type = "byte" },
+	{ name = "b7", type = "byte" },
+	{ name = "b8", type = "byte" },
+	{ name = "b9", type = "byte" },
+	{ name = "l3", type = "long" },
+	{ name = "vec3", type = "vec3" },
+	{ name = "v2", type = "short" },
+	{ name = "l4", type = "long" },
+	{ name = "l5", type = "long" },
+]
+
+[[usermsg]]
+name = "PrintKB"
+fields = [
+	{ name = "text", type = "string" },
+]
+
+[[usermsg]]
+name = "InvAdd"
+fields = [
+	{ name = "itemId", type = "long" },
+	{ name = "b1", type = "byte" },
+	{ name = "b2", type = "byte" },
+	{ name = "b3", type = "byte" },
+	{ name = "f1", type = "float" },
+]
+
+[[usermsg]]
+name = "InvRemove"
+fields = [
+	{ name = "itemId", type = "long" },
+	{ name = "b", type = "byte" },
+]
+
+[[usermsg]]
+name = "Flamethwr"
+fields = [
+	{ name = "b", type = "byte" },
+	{ name = "pos1", type = "vec3" },
+	{ name = "pos2", type = "vec3" },
+]
+
+[[usermsg]]
+name = "ClassicMode"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "WeaponSpr"
+fields = [
+	{ name = "index", type = "short" },
+	{ name = "sprite", type = "string" },
+]
+
+[[usermsg]]
+name = "ToggleElem"
+fields = [
+	{ name = "b1", type = "byte" },
+	{ name = "b2", type = "byte" },
+]
+
+[[usermsg]]
+name = "CustSpr"
+note = "10257 layout"
+fields = [
+	{ name = "b1", type = "byte" },
+	{ name = "l1", type = "long" },
+	{ name = "s1", type = "string" },
+	{ name = "f1", type = "float" },
+	{ name = "f2", type = "float" },
+	{ name = "b2", type = "byte" },
+	{ name = "b3", type = "byte" },
+	{ name = "f3", type = "float" },
+	{ name = "f4", type = "float" },
+	{ name = "f5", type = "float" },
+	{ name = "f6", type = "float" },
+	{ name = "f7", type = "float" },
+	{ name = "b4", type = "byte" },
+]
+
+[[usermsg]]
+name = "NumDisplay"
+note = "10257 layout"
+fields = [
+	{ name = "b1", type = "byte" },
+	{ name = "l1", type = "long" },
+	{ name = "f1", type = "float" },
+	{ name = "b2", type = "byte" },
+	{ name = "b3", type = "byte" },
+	{ name = "f2", type = "float" },
+	{ name = "f3", type = "float" },
+	{ name = "s1", type = "string" },
+	{ name = "f4", type = "float" },
+	{ name = "f5", type = "float" },
+	{ name = "f6", type = "float" },
+	{ name = "f7", type = "float" },
+	{ name = "b4", type = "byte" },
+]
+
+[[usermsg]]
+name = "UpdateNum"
+fields = [
+	{ name = "b", type = "byte" },
+	{ name = "f", type = "float" },
+]
+
+[[usermsg]]
+name = "TimeDisplay"
+note = "10257 layout"
+fields = [
+	{ name = "b1", type = "byte" },
+	{ name = "l1", type = "long" },
+	{ name = "f1", type = "float" },
+	{ name = "f2", type = "float" },
+	{ name = "f3", type = "float" },
+	{ name = "f4", type = "float" },
+	{ name = "s1", type = "string" },
+	{ name = "f5", type = "float" },
+	{ name = "f6", type = "float" },
+	{ name = "f7", type = "float" },
+	{ name = "f8", type = "float" },
+	{ name = "b2", type = "byte" },
+]
+
+[[usermsg]]
+name = "UpdateTime"
+fields = [
+	{ name = "b", type = "byte" },
+	{ name = "f1", type = "float" },
+	{ name = "f2", type = "float" },
+]
+
+[[usermsg]]
+name = "VModelPos"
+fields = [
+	{ name = "b", type = "byte" },
+	{ name = "pos", type = "vec3" },
+]
+
+[[usermsg]]
+name = "ChangeSky"
+fields = [
+	{ name = "skyName", type = "string" },
+	{ name = "vec", type = "vec3" },
+]
+
+[[usermsg]]
+name = "ClServerInfo"
+fields = [
+	{ name = "b", type = "byte" },
+	{ name = "l", type = "long" },
+	{ name = "s", type = "string" },
+]
+
+[[usermsg]]
+name = "TE_CUSTOM"
+note = "subtype switch"
+fields = [
+	{ name = "subtype", type = "byte" },
+	{ name = "type1", type = "group", when = { field = "subtype", eq = 1 }, fields = [
+		{ name = "s1", type = "short" },
+		{ name = "s2", type = "short" },
+		{ name = "vec", type = "vec3" },
+	] },
+	{ name = "b", type = "byte", when = { field = "subtype", eq = 3 } },
+]
+
+[[usermsg]]
+name = "ScreenShake"
+note = "engine-handled"
+fields = [
+	{ name = "amplitude", type = "short" },
+	{ name = "duration", type = "short" },
+	{ name = "frequency", type = "short" },
+]
+
+[[usermsg]]
+name = "ScreenFade"
+note = "engine-handled"
+fields = [
+	{ name = "duration", type = "short" },
+	{ name = "holdTime", type = "short" },
+	{ name = "flags", type = "short" },
+	{ name = "r", type = "byte" },
+	{ name = "g", type = "byte" },
+	{ name = "b", type = "byte" },
+	{ name = "a", type = "byte" },
+]
+
+# ------------------------------------------------- branch/loop driven (raw)
+
+# These messages read flags- or subtype-driven variable payloads that the RE
+# docs did not reduce to a single linear order; they are displayed as a hex
+# dump. Encodable variants (TE_CUSTOM above) already are.
+
+[[usermsg]]
+name = "Gib"
+note = "raw: type-driven, each type reads 6 coords"
+raw = true
+fields = []
+
+[[usermsg]]
+name = "StartSound"
+note = "raw: flags bit-driven"
+raw = true
+fields = []
+
+[[usermsg]]
+name = "RampSprite"
+note = "raw: 6 flag variants, trailing byte count 0-7"
+raw = true
+fields = []
+
+# ---------------------------------------- registered, no client hook (raw)
+# The client game DLL never hooks these (locally generated or consumed via
+# another path), so the monitor registers display-only entries for them.
+
+[[usermsg]]
+name = "SelAmmo"
+note = "raw: no client hook (client-side menu generates it)"
+raw = true
+fields = []
+
+[[usermsg]]
+name = "SoundList"
+note = "raw: no client hook"
+raw = true
+fields = []
+
+[[usermsg]]
+name = "ASScriptName"
+note = "raw: no client hook"
+raw = true
+fields = []
+
+[[usermsg]]
+name = "DeathMsg"
+note = "raw: server registers/sends it but 10257 client has no MsgFunc"
+raw = true
+fields = []
+
+[[usermsg]]
+name = "ClExtrasInfo"
+note = "raw: CryptoPP-encrypted frame (only the header is readable)"
+raw = true
+fields = []

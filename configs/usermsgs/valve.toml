@@ -1,0 +1,348 @@
+# Half-Life (mod dir: valve) UserMsg wire formats.
+#
+# Transcribed from .zcode/networkmessages/hl-10210/usermessages.md
+# (hl-10210 client.so, reverse engineered; every field order verified by
+# decompilation). Numeric message ids are assigned per server via
+# svc_newusermsg, so everything here is name-driven.
+#
+# Schema syntax:
+#   [primitives] coord_size = 2|4     bytes of "coord" (2: short/8, 4: long/8)
+#   extends = "other.toml"            inherit a base file (child overrides by name)
+#   [[usermsg]]                       one message: name, note, raw, fields
+#   fields: name/type/count/when/fields/note
+#     type   byte|char|short|word|long|float|coord|angle|angle16|string|vec3|group
+#     count  N | "<field name>" | "*"   (repeat; * = until the buffer runs out)
+#     when   { field = "...", eq|ne = N }  (read this field only when the
+#             previously-read field matches)
+
+[primitives]
+coord_size = 2    # READ_COORD = short * 1/8 on the byte-aligned usermsg stream
+
+[[usermsg]]
+name = "AmmoX"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "count", type = "byte" },
+]
+
+[[usermsg]]
+name = "AmmoPickup"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "count", type = "byte" },
+]
+
+[[usermsg]]
+name = "WeapPickup"
+fields = [
+	{ name = "index", type = "byte" },
+]
+
+[[usermsg]]
+name = "ItemPickup"
+fields = [
+	{ name = "itemName", type = "string" },
+]
+
+[[usermsg]]
+name = "HideWeapon"
+fields = [
+	{ name = "hideBits", type = "byte" },
+]
+
+[[usermsg]]
+name = "CurWeapon"
+fields = [
+	{ name = "state", type = "byte", note = "0=holster 1=active 2=active+autofire" },
+	{ name = "weaponId", type = "char" },
+	{ name = "clip", type = "char", note = "-1=no magazine" },
+]
+
+[[usermsg]]
+name = "WeaponList"
+fields = [
+	{ name = "name", type = "string" },
+	{ name = "ammo1Type", type = "char", note = "-1=none" },
+	{ name = "ammo1Max", type = "byte", note = "255=-1" },
+	{ name = "ammo2Type", type = "char" },
+	{ name = "ammo2Max", type = "byte", note = "255=-1" },
+	{ name = "bucket", type = "char" },
+	{ name = "bucketPosition", type = "char" },
+	{ name = "slot", type = "char" },
+	{ name = "flags", type = "byte" },
+]
+
+[[usermsg]]
+name = "SecAmmoVal"
+fields = [
+	{ name = "slot", type = "byte", note = "<4" },
+	{ name = "amount", type = "byte" },
+]
+
+[[usermsg]]
+name = "SecAmmoIcon"
+fields = [
+	{ name = "spriteName", type = "string" },
+]
+
+[[usermsg]]
+name = "SetFOV"
+fields = [
+	{ name = "fov", type = "byte", note = "0=default_fov" },
+]
+
+[[usermsg]]
+name = "Geiger"
+fields = [
+	{ name = "range", type = "byte", note = "*4 when used" },
+]
+
+[[usermsg]]
+name = "FlashBat"
+fields = [
+	{ name = "battery", type = "byte", note = "/100" },
+]
+
+[[usermsg]]
+name = "Flashlight"
+fields = [
+	{ name = "on", type = "byte" },
+	{ name = "battery", type = "byte", note = "/100" },
+]
+
+[[usermsg]]
+name = "Battery"
+fields = [
+	{ name = "armor", type = "short" },
+]
+
+[[usermsg]]
+name = "Health"
+fields = [
+	{ name = "health", type = "byte" },
+]
+
+[[usermsg]]
+name = "Damage"
+note = "damage direction indicator"
+fields = [
+	{ name = "armor", type = "byte" },
+	{ name = "damageTaken", type = "byte" },
+	{ name = "bitsDamage", type = "long", note = "DMG_* flags" },
+	{ name = "vecFrom", type = "vec3" },
+]
+
+[[usermsg]]
+name = "DeathMsg"
+fields = [
+	{ name = "killer", type = "byte" },
+	{ name = "victim", type = "byte" },
+	{ name = "weapon", type = "string", note = "e.g. d_xx" },
+]
+
+[[usermsg]]
+name = "SayText"
+fields = [
+	{ name = "client", type = "byte" },
+	{ name = "text", type = "string" },
+]
+
+[[usermsg]]
+name = "TextMsg"
+fields = [
+	{ name = "dest", type = "byte", note = "1|2=console 3=chat 4=center" },
+	{ name = "param1", type = "string" },
+	{ name = "param2", type = "string" },
+	{ name = "param3", type = "string" },
+	{ name = "param4", type = "string" },
+	{ name = "param5", type = "string" },
+]
+
+[[usermsg]]
+name = "HudText"
+fields = [
+	{ name = "messageName", type = "string" },
+]
+
+[[usermsg]]
+name = "GameTitle"
+fields = []
+
+[[usermsg]]
+name = "Train"
+fields = [
+	{ name = "pos", type = "byte", note = "0=hide" },
+]
+
+[[usermsg]]
+name = "StatusIcon"
+fields = [
+	{ name = "enable", type = "byte" },
+	{ name = "icon", type = "string" },
+	{ name = "rgb", type = "byte", count = 3, when = { field = "enable", ne = 0 } },
+]
+
+[[usermsg]]
+name = "StatusText"
+fields = [
+	{ name = "line", type = "byte", note = "<4" },
+	{ name = "text", type = "string" },
+]
+
+[[usermsg]]
+name = "StatusValue"
+fields = [
+	{ name = "index", type = "byte", note = "1..8" },
+	{ name = "value", type = "short" },
+]
+
+[[usermsg]]
+name = "ShowMenu"
+fields = [
+	{ name = "validSlots", type = "short" },
+	{ name = "displayTime", type = "char", note = "0=forever" },
+	{ name = "isMore", type = "byte" },
+	{ name = "text", type = "string", when = { field = "isMore", eq = 0 } },
+]
+
+[[usermsg]]
+name = "MOTD"
+fields = [
+	{ name = "isLast", type = "byte" },
+	{ name = "chunk", type = "string" },
+]
+
+[[usermsg]]
+name = "ServerName"
+fields = [
+	{ name = "name", type = "string" },
+]
+
+[[usermsg]]
+name = "ScoreInfo"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "frags", type = "short" },
+	{ name = "deaths", type = "short" },
+	{ name = "playerClass", type = "short" },
+	{ name = "teamNumber", type = "short" },
+]
+
+[[usermsg]]
+name = "TeamInfo"
+fields = [
+	{ name = "playerIndex", type = "byte", note = "1..64" },
+	{ name = "teamName", type = "string" },
+]
+
+[[usermsg]]
+name = "TeamNames"
+fields = [
+	{ name = "numTeams", type = "byte" },
+	{ name = "teamName", type = "string", count = "numTeams" },
+]
+
+[[usermsg]]
+name = "TeamScore"
+fields = [
+	{ name = "teamName", type = "string" },
+	{ name = "frags", type = "short" },
+	{ name = "deaths", type = "short" },
+]
+
+[[usermsg]]
+name = "Spectator"
+fields = [
+	{ name = "playerIndex", type = "byte", note = "1..64" },
+	{ name = "isSpectator", type = "byte" },
+]
+
+[[usermsg]]
+name = "AllowSpec"
+fields = [
+	{ name = "allow", type = "byte" },
+]
+
+[[usermsg]]
+name = "ValClass"
+note = "valid classes; shorts until the buffer runs out"
+fields = [
+	{ name = "classes", type = "short", count = "*" },
+]
+
+[[usermsg]]
+name = "Feign"
+fields = [
+	{ name = "state", type = "byte" },
+]
+
+[[usermsg]]
+name = "Detpack"
+fields = [
+	{ name = "state", type = "byte" },
+]
+
+[[usermsg]]
+name = "BuildSt"
+fields = [
+	{ name = "state", type = "short" },
+]
+
+[[usermsg]]
+name = "RandomPC"
+fields = [
+	{ name = "state", type = "byte" },
+]
+
+[[usermsg]]
+name = "VGUIMenu"
+fields = [
+	{ name = "menuID", type = "byte" },
+	{ name = "mapName", type = "string", when = { field = "menuID", eq = 4 } },
+]
+
+[[usermsg]]
+name = "InitHUD"
+fields = []
+
+[[usermsg]]
+name = "ResetHUD"
+fields = []
+
+[[usermsg]]
+name = "GameMode"
+fields = [
+	{ name = "teamplay", type = "byte" },
+]
+
+[[usermsg]]
+name = "ViewMode"
+fields = []
+
+[[usermsg]]
+name = "Concuss"
+fields = [
+	{ name = "state", type = "byte" },
+]
+
+[[usermsg]]
+name = "ResetFade"
+fields = []
+
+[[usermsg]]
+name = "SpecFade"
+fields = []
+
+[[usermsg]]
+name = "VoiceMask"
+note = "engine voice system"
+fields = [
+	{ name = "audiblePlayers", type = "long" },
+	{ name = "bannedPlayers", type = "long" },
+	{ name = "serverModEnable", type = "byte" },
+]
+
+[[usermsg]]
+name = "ReqState"
+note = "HLTV spectating state request"
+fields = []
