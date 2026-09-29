@@ -147,16 +147,111 @@ class TestFindNewScreenshot(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# UserMsg monitor helpers
+# ---------------------------------------------------------------------------
+
+class TestUserMsgParsers(unittest.TestCase):
+    def test_parse_status(self):
+        line = ("cli.usermsg: schema=svencoop.toml coord_size=4 messages=101 "
+                "display=on hooks: 85 wrapped, 16 self-registered, 0 pending")
+        st = halflife_mcp.parse_usermsg_status(line)
+        self.assertEqual(st.schema_file, "svencoop.toml")
+        self.assertEqual(st.coord_size, 4)
+        self.assertEqual(st.messages, 101)
+        self.assertTrue(st.display)
+        self.assertEqual((st.wrapped, st.self_registered, st.pending), (85, 16, 0))
+
+    def test_parse_status_garbage(self):
+        self.assertIsNone(halflife_mcp.parse_usermsg_status("some other console spam"))
+        self.assertIsNone(halflife_mcp.parse_usermsg_status(""))
+
+    def test_parse_events(self):
+        text = "\n".join([
+            "Some unrelated engine line",
+            "cli.usermsg: events newest=42 name=*",
+            "#40 [usermsg] CurWeapon size=5 state=1 weaponId=18 clip=35",
+            "#41 [usermsg] SayText size=48 client=1 text=\"hi there\"",
+            "#42 [usermsg] StartSound size=19 raw 18 00 01",
+            "cli.usermsg: 7 more after #42 (raise since)",
+        ])
+        events, newest, more = halflife_mcp.parse_usermsg_events(text)
+        self.assertEqual(newest, 42)
+        self.assertEqual(more, 7)
+        self.assertEqual([e.seq for e in events], [40, 41, 42])
+        self.assertEqual(events[0].name, "CurWeapon")
+        self.assertEqual(events[0].size, 5)
+        self.assertEqual(events[0].detail, "state=1 weaponId=18 clip=35")
+        self.assertEqual(events[2].detail, "raw 18 00 01")
+
+    def test_parse_events_empty(self):
+        text = "cli.usermsg: events newest=0 name=*\ncli.usermsg: no matching events"
+        events, newest, more = halflife_mcp.parse_usermsg_events(text)
+        self.assertEqual(events, [])
+        self.assertEqual(newest, 0)
+        self.assertIsNone(more)
+
+    def _write_game_dir(self, root):
+        cfg = os.path.join(root, "svencoop", "metahook", "configs")
+        schemas = os.path.join(cfg, "usermsgs")
+        os.makedirs(schemas)
+        with open(os.path.join(cfg, "halflifecli.toml"), "wb") as f:
+            f.write(b"[rcon]\npassword = \"x\"\n")
+        with open(os.path.join(schemas, "valve.toml"), "wb") as f:
+            f.write(b"[primitives]\ncoord_size = 2\n\n"
+                    b"[[usermsg]]\nname = \"Health\"\n"
+                    b"fields = [ { name = \"health\", type = \"byte\" } ]\n\n"
+                    b"[[usermsg]]\nname = \"ScoreInfo\"\nfields = []\n")
+        with open(os.path.join(schemas, "svencoop.toml"), "wb") as f:
+            f.write(b"extends = \"valve.toml\"\n\n[primitives]\ncoord_size = 4\n\n"
+                    b"[[usermsg]]\nname = \"Health\"\n"
+                    b"fields = [ { name = \"health\", type = \"long\" } ]\n\n"
+                    b"[[usermsg]]\nname = \"SvenOnly\"\nnote = \"n\"\nraw = true\nfields = []\n")
+
+    def test_load_schema_merge(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._write_game_dir(d)
+            schema = halflife_mcp.load_usermsg_schema(d)
+            self.assertEqual(schema.schema_file, "svencoop.toml")
+            self.assertEqual(schema.extends, "valve.toml")
+            self.assertEqual(schema.coord_size, 4)
+            names = [m["name"] for m in schema.messages]
+            self.assertIn("ScoreInfo", names)   # inherited from valve
+            self.assertIn("SvenOnly", names)
+            health = next(m for m in schema.messages if m["name"] == "Health")
+            self.assertEqual(health["fields"][0]["type"], "long")  # overridden
+
+    def test_load_schema_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            from mcp.server.mcpserver.exceptions import ToolError
+            with self.assertRaises(ToolError):
+                halflife_mcp.load_usermsg_schema(d)
+
+    def test_sync_schemas(self):
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as game:
+            with open(os.path.join(src, "a.toml"), "wb") as f:
+                f.write(b"[[usermsg]]\nname = \"X\"\nfields = []\n")
+            n = halflife_mcp.sync_usermsg_schemas(game, src)
+            self.assertEqual(n, 1)
+            self.assertTrue(os.path.exists(
+                os.path.join(game, "svencoop", "metahook", "configs", "usermsgs", "a.toml")))
+
+
+# ---------------------------------------------------------------------------
 # Fake RCON server + tool tests over the in-memory MCP client
 # ---------------------------------------------------------------------------
 
 class FakeRconServer:
-    """Minimal Source RCON server for one command round-trip, in a thread."""
+    """Minimal Source RCON server for one command round-trip, in a thread.
 
-    def __init__(self, password="", echo=True, delay=0.0):
+    `canned` maps a command substring to a literal reply body; the first
+    matching entry wins, otherwise the command is echoed (+ " fake-output").
+    """
+
+    def __init__(self, password="", echo=True, delay=0.0, canned=None):
         self.password = password
         self.echo = echo
         self.delay = delay
+        self.canned = list((canned or {}).items())
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._listener.bind(("127.0.0.1", 0))
@@ -195,7 +290,14 @@ class FakeRconServer:
                         return
                     if self.delay:
                         import time; time.sleep(self.delay)
-                    text = (body.decode() + " fake-output\n").encode() if self.echo else b""
+                    cmd = body.decode()
+                    text = None
+                    for needle, reply_body in self.canned:
+                        if needle in cmd:
+                            text = reply_body.encode()
+                            break
+                    if text is None:
+                        text = (cmd + " fake-output\n").encode() if self.echo else b""
                     reply = (rid, rcon_client.SERVERDATA_RESPONSE_VALUE, text)
                 else:
                     continue
@@ -311,6 +413,55 @@ class TestToolsOverMemory(unittest.TestCase):
                 self.assertIn("launch_game", r.content[0].text)
         anyio.run(main)
 
+    def test_usermsg_tools(self):
+        report = ("cli.usermsg: schema=svencoop.toml coord_size=4 messages=101 "
+                  "display=on hooks: 85 wrapped, 16 self-registered, 0 pending")
+        events_page = "\n".join([
+            "cli.usermsg: events newest=42 name=CurWeapon",
+            "#40 [usermsg] CurWeapon size=5 state=1 weaponId=18 clip=35",
+            "#42 [usermsg] CurWeapon size=5 state=0 weaponId=18 clip=-1",
+        ])
+        fake_srv = FakeRconServer(password="pw", echo=True, canned={
+            "cli.usermsg events": events_page,
+            "cli.usermsg off": "cli.usermsg: display off (recording continues)",
+            "cli.usermsg": report,
+        })
+        try:
+            mgr = halflife_mcp.Manager()
+            _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
+            mgr._password = "pw"
+
+            async def main():
+                st = await anyio.to_thread.run_sync(mgr.usermsg_status)
+                self.assertEqual(st.messages, 101)
+                self.assertEqual(st.wrapped, 85)
+                got = await anyio.to_thread.run_sync(
+                    lambda: mgr.usermsg_events(39, 50, "CurWeapon"))
+                self.assertEqual(got.newest_seq, 42)
+                self.assertEqual([e.seq for e in got.events], [40, 42])
+                self.assertEqual(got.events[0].name, "CurWeapon")
+                self.assertIsNone(got.more_after)
+                off = await anyio.to_thread.run_sync(lambda: mgr.usermsg_set_display(False))
+                self.assertIn("display off", off)
+            anyio.run(main)
+        finally:
+            fake_srv.close()
+
+    def test_usermsg_status_rejects_garbage(self):
+        fake_srv = FakeRconServer(password="pw", echo=True)  # echoes, no report line
+        try:
+            mgr = halflife_mcp.Manager()
+            _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
+            mgr._password = "pw"
+
+            async def main():
+                from mcp.server.mcpserver.exceptions import ToolError
+                with self.assertRaises(ToolError):
+                    await anyio.to_thread.run_sync(mgr.usermsg_status)
+            anyio.run(main)
+        finally:
+            fake_srv.close()
+
 
 # ---------------------------------------------------------------------------
 # stdio smoke test
@@ -328,7 +479,9 @@ class TestStdioSmoke(unittest.TestCase):
                 tools = await client.list_tools()
                 names = {t.name for t in tools.tools}
                 expected = {"launch_game", "game_status", "run_command",
-                            "find_cvar", "read_console", "snapshot", "quit_game"}
+                            "find_cvar", "read_console", "snapshot", "quit_game",
+                            "usermsg_status", "usermsg_messages", "usermsg_events",
+                            "usermsg_set_display", "usermsg_reload_schema"}
                 self.assertEqual(names, expected)
 
         anyio.run(main)

@@ -91,10 +91,25 @@ via `read_console`. Tool ↔ manual mapping:
 | `snapshot` | the engine `screenshot` command + locating the newest image + converting to PNG (returns a PNG image directly, downscaled by default) |
 | `quit_game` | `quit` over RCON, then stdin, then kill |
 | `game_status` | manual process/port inspection |
+| `usermsg_status` / `usermsg_messages` / `usermsg_events` / `usermsg_set_display` / `usermsg_reload_schema` | `cli.usermsg` over RCON + reading `configs/usermsgs/*.toml` by hand |
 
 Only fall back to the manual channels below when no `halflife` MCP server is
 connected, or for games that were not started by the MCP server (attached games
 expose no `read_console` stream).
+
+## UserMsg monitor
+
+While connected to a server, the plugin decodes every server user message per
+a TOML schema (one file per `-game` folder in
+`svencoop\metahook\configs\usermsgs\`, maintained in the repo at
+`configs/usermsgs/`) and records the last 512 into an in-plugin ring buffer.
+Watch traffic with `usermsg_events(since_seq=..., name=...)` (page forward
+with `since_seq=<previous>.newest_seq`) or, without MCP, `cli.usermsg events
+[since N] [limit N] [name X]` over RCON/stdin; `cli.usermsg` reports hook
+health (wrapped = intercepted the game DLL's hook, self-registered =
+display-only entry for messages the game DLL never hooks). Messages only flow
+while a server connection is up. `python mcp\usermsg_test.py
+[--connect HOST:PORT]` runs the plugin-level acceptance flow.
 
 ## Control channels
 
@@ -244,5 +259,8 @@ Source map, for code-level debugging: `src/plugins.cpp` (lifecycle, banner,
 after execution), `src/output_capture.cpp` (console capture via VGUI2Extension
 GameConsole callbacks; no engine code hooks),
 `src/rcon_server.cpp` (protocol, auth, limits), `src/window_manager.cpp`
-(hide modes), `src/config.cpp` (TOML config parsing), `mcp/acceptance_test.py`
-(reference automation harness).
+(hide modes), `src/config.cpp` (TOML config parsing),
+`src/usermsg_schema.cpp` (UserMsg TOML loader with extends inheritance),
+`src/usermsg_monitor.cpp` (UserMsg hooking via `g_pMetaHookAPI->HookUserMsg`,
+wire decoder, 512-event ring, `cli.usermsg` implementation),
+`mcp/acceptance_test.py` (reference automation harness).

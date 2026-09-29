@@ -19,6 +19,8 @@ import glob
 import io
 import logging
 import os
+import re
+import shutil
 import sys
 import threading
 import time
@@ -74,7 +76,11 @@ INSTRUCTIONS = (
     "the load to finish before snapshot. Before snapshot, make sure a map is "
     "loaded and rendering (the main menu does not render the world). Verify "
     "cvar/command names with find_cvar before running them. Call quit_game when "
-    "done. Use run_command for everything else."
+    "done. Use run_command for everything else. "
+    "The usermsg_* tools monitor server user messages: usermsg_events returns "
+    "decoded network traffic (page with since_seq=usermsg_events(...).newest_seq), "
+    "usermsg_messages shows the schema's message layouts, usermsg_status reports "
+    "hook health. User messages only flow while connected to a server."
 )
 
 
@@ -93,6 +99,37 @@ class ConsoleWindow(BaseModel):
     next_cursor: int
     dropped: int = 0
     note: str | None = None
+
+
+class UserMsgStatus(BaseModel):
+    schema_file: str
+    coord_size: int
+    messages: int
+    display: bool
+    wrapped: int           # hooked on top of the game DLL's own hook
+    self_registered: int   # no game DLL hook; monitor-created display-only entry
+    pending: int           # not yet resolvable in the engine's usermsg list
+
+
+class UserMsgEvent(BaseModel):
+    seq: int               # monotonic event number, use as since_seq cursor
+    name: str
+    size: int
+    detail: str            # decoded "field=value ..." part, raw hex for raw mode
+
+
+class UserMsgEvents(BaseModel):
+    events: list[UserMsgEvent]
+    newest_seq: int        # highest seq recorded (0 when none); feed back as since_seq
+    more_after: int | None = None  # matching events beyond this page
+    note: str | None = None
+
+
+class UserMsgMessages(BaseModel):
+    schema_file: str
+    extends: str | None
+    coord_size: int
+    messages: list[dict]   # {name, raw, note, fields: [{name, type, count, when, note, fields}]}
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +205,113 @@ def shot_to_png(path, max_edge):
 
 
 # ---------------------------------------------------------------------------
+# UserMsg monitor helpers
+# ---------------------------------------------------------------------------
+
+# "cli.usermsg: schema=svencoop.toml coord_size=4 messages=101 display=on
+#  hooks: 85 wrapped, 16 self-registered, 0 pending"
+USERMSG_STATUS_RE = re.compile(
+    r"cli\.usermsg: schema=(\S+) coord_size=(\d+) messages=(\d+) display=(on|off) "
+    r"hooks: (\d+) wrapped, (\d+) self-registered, (\d+) pending", re.MULTILINE)
+
+# "#17 [usermsg] CurWeapon size=5 state=1 weaponId=18 clip=35"
+USERMSG_EVENT_RE = re.compile(r"#(\d+) \[usermsg\] (\S+) size=(\d+)(?: (.*))?$", re.MULTILINE)
+USERMSG_EVENTS_NEWEST_RE = re.compile(r"cli\.usermsg: events newest=(\d+) name=(.*)$", re.MULTILINE)
+USERMSG_EVENTS_MORE_RE = re.compile(r"cli\.usermsg: (\d+) more after #\d+", re.MULTILINE)
+
+
+def parse_usermsg_status(text):
+    """UserMsgStatus from `cli.usermsg` output, or None when unrecognized."""
+    m = USERMSG_STATUS_RE.search(text)
+    if not m:
+        return None
+    return UserMsgStatus(
+        schema_file=m.group(1), coord_size=int(m.group(2)), messages=int(m.group(3)),
+        display=m.group(4) == "on", wrapped=int(m.group(5)),
+        self_registered=int(m.group(6)), pending=int(m.group(7)))
+
+
+def parse_usermsg_events(text):
+    """(events, newest_seq, more_after|None) from `cli.usermsg events` output."""
+    newest = 0
+    m = USERMSG_EVENTS_NEWEST_RE.search(text)
+    if m:
+        newest = int(m.group(1))
+    events = [UserMsgEvent(seq=int(m.group(1)), name=m.group(2), size=int(m.group(3)),
+                           detail=m.group(4) or "")
+              for m in USERMSG_EVENT_RE.finditer(text)]
+    more = None
+    m = USERMSG_EVENTS_MORE_RE.search(text)
+    if m:
+        more = int(m.group(1))
+    return events, newest, more
+
+
+def usermsg_schema_dir(game_dir):
+    return os.path.join(mod_dir(game_dir), "metahook", "configs", "usermsgs")
+
+
+def usermsg_schema_file(game_dir):
+    """Schema file name the plugin loads: [usermsg] file, else <moddir>.toml."""
+    override = read_plugin_config(game_dir).get("usermsg", {}).get("file", "")
+    return override or (os.path.basename(mod_dir(game_dir)) + ".toml")
+
+
+def load_usermsg_schema(game_dir):
+    """Merged UserMsgMessages for the game's schema, following extends chains.
+
+    Reads the same files the plugin loads (mod/metahook/configs/usermsgs/);
+    base files load first so the child's definitions win, like the plugin.
+    Raises ToolError when the schema file is missing or unparsable.
+    """
+    schema_dir = usermsg_schema_dir(game_dir)
+    root_file = usermsg_schema_file(game_dir)
+
+    merged = {}
+    coord_size = 2
+    seen = set()
+
+    def load_file(fname):
+        """Load one file after its extends chain; returns its own extends."""
+        nonlocal coord_size
+        key = fname.lower()
+        if key in seen:
+            raise ToolError(f"usermsg schema extends cycle at {fname}")
+        seen.add(key)
+        path = os.path.join(schema_dir, fname)
+        try:
+            with open(path, "rb") as f:
+                data = tomllib.load(f)
+        except OSError as e:
+            raise ToolError(f"usermsg schema {fname} not found in {schema_dir} ({e})")
+        except tomllib.TOMLDecodeError as e:
+            raise ToolError(f"usermsg schema {fname} is not valid TOML: {e}")
+        parent = data.get("extends")
+        if parent:
+            load_file(parent)  # base definitions first, child overrides below
+        for msg in data.get("usermsg", []):
+            if isinstance(msg, dict) and msg.get("name"):
+                merged[msg["name"]] = msg
+        coord_size = data.get("primitives", {}).get("coord_size", coord_size)
+        return parent
+
+    extends = load_file(root_file)
+    return UserMsgMessages(
+        schema_file=root_file, extends=extends, coord_size=coord_size,
+        messages=[merged[name] for name in sorted(merged)])
+
+
+def sync_usermsg_schemas(game_dir, source_dir):
+    """Copy the repo's schema TOMLs into the game's usermsgs dir. Returns count."""
+    os.makedirs(usermsg_schema_dir(game_dir), exist_ok=True)
+    n = 0
+    for path in glob.glob(os.path.join(source_dir, "*.toml")):
+        shutil.copy2(path, usermsg_schema_dir(game_dir))
+        n += 1
+    return n
+
+
+# ---------------------------------------------------------------------------
 # Runtime state
 # ---------------------------------------------------------------------------
 
@@ -233,6 +377,15 @@ class Manager:
                 attached.host, attached.port, plugin_rcon_password(attached.game_dir))
             self._attached_key = key
         return self._attached_rcon
+
+    def _game_dir_locked(self):
+        """Install dir of the running game (managed or attached)."""
+        if self._proc is not None and self._proc.alive and self._game_dir:
+            return self._game_dir
+        attached = self._probe_attached()
+        if attached is not None:
+            return attached.game_dir
+        raise ToolError("no game running; call launch_game first")
 
     # -- tools --------------------------------------------------------------
 
@@ -372,6 +525,57 @@ class Manager:
         result = proc.stop(quit_command=rcon_quit, timeout=timeout_s)
         return result.summary
 
+    # -- usermsg tools -------------------------------------------------------
+
+    def usermsg_status(self):
+        out = self.run_command("cli.usermsg")
+        status = parse_usermsg_status(out)
+        if status is None:
+            raise ToolError(f"unexpected cli.usermsg output: {out[:200]}")
+        return status
+
+    def usermsg_messages(self):
+        with _session_lock:
+            game_dir = self._game_dir_locked()
+        return load_usermsg_schema(game_dir)
+
+    def usermsg_events(self, since_seq, limit, name):
+        limit = min(max(int(limit or 50), 1), 200)
+        cmd = "cli.usermsg events limit %d" % limit
+        if since_seq is not None:
+            cmd += " since %d" % max(int(since_seq), 0)
+        if name:
+            cmd += " name " + name.strip().replace("\n", " ")
+        out = self.run_command(cmd)
+        events, newest, more = parse_usermsg_events(out)
+        note = None
+        if not events:
+            note = "no matching events" if "no matching events" in out else out[:200]
+        return UserMsgEvents(events=events, newest_seq=newest, more_after=more, note=note)
+
+    def usermsg_set_display(self, enabled):
+        out = self.run_command("cli.usermsg %s" % ("on" if enabled else "off"))
+        return out.strip() or ("display on" if enabled else "display off")
+
+    def usermsg_reload_schema(self, sync_from_repo):
+        with _session_lock:
+            game_dir = self._game_dir_locked()
+        synced = None
+        if sync_from_repo:
+            repo_schemas = os.path.abspath(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "configs", "usermsgs"))
+            if os.path.isdir(repo_schemas):
+                synced = sync_usermsg_schemas(game_dir, repo_schemas)
+        self.run_command("cli.usermsg reload")
+        status = self.usermsg_status()
+        parts = []
+        if synced is not None:
+            parts.append(f"synced {synced} schema file(s) from the repo")
+        parts.append(f"schema={status.schema_file} messages={status.messages} "
+                     f"hooks: {status.wrapped} wrapped, {status.self_registered} self-registered, "
+                     f"{status.pending} pending")
+        return "; ".join(parts)
+
     def shutdown(self):
         """Stop the game this server launched; never touches attached games."""
         with _session_lock:
@@ -461,6 +665,44 @@ def quit_game(
 ) -> str:
     """Quit the game cleanly (RCON, then stdin, then kill as a last resort)."""
     return manager.quit_game(timeout_s)
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
+def usermsg_status() -> UserMsgStatus:
+    """Report the UserMsg monitor state: loaded schema, coord size, hook counts."""
+    return manager.usermsg_status()
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
+def usermsg_messages() -> UserMsgMessages:
+    """Load the merged UserMsg schema from the game install: message names, field layouts, notes."""
+    return manager.usermsg_messages()
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
+def usermsg_events(
+    since_seq: Annotated[int | None, Field(description="Return events with seq greater than this; omit for the newest page")] = None,
+    limit: Annotated[int, Field(description="Maximum events per page", ge=1, le=200)] = 50,
+    name: Annotated[str | None, Field(description="Only events of this message name (case-insensitive)")] = None,
+) -> UserMsgEvents:
+    """Read decoded user messages the game received; page forward with since_seq=newest_seq."""
+    return manager.usermsg_events(since_seq, limit, name)
+
+
+@mcp.tool()
+def usermsg_set_display(
+    enabled: Annotated[bool, Field(description="True prints a [usermsg] line to the console per message; recording is unaffected")],
+) -> str:
+    """Toggle live [usermsg] console printing of user messages."""
+    return manager.usermsg_set_display(enabled)
+
+
+@mcp.tool()
+def usermsg_reload_schema(
+    sync_from_repo: Annotated[bool, Field(description="Copy configs/usermsgs/*.toml from the halflife-cli repo into the game install before reloading")] = True,
+) -> str:
+    """Reload the UserMsg schema TOML (optionally syncing it from the repo first)."""
+    return manager.usermsg_reload_schema(sync_from_repo)
 
 
 if __name__ == "__main__":

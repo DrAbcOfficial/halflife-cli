@@ -42,8 +42,10 @@ itself, so the game survives the client's lifetime; a game started elsewhere
 is attached to by reading the plugin's port file.
 
 Tools: `launch_game`, `game_status`, `run_command`, `find_cvar`,
-`read_console`, `snapshot` (returns a PNG image, downscaled by default), and
-`quit_game`.
+`read_console`, `snapshot` (returns a PNG image, downscaled by default),
+`quit_game`, and the UserMsg monitor tools `usermsg_status` (hook health),
+`usermsg_messages` (merged schema layouts), `usermsg_events` (decoded traffic,
+paged by `since_seq`), `usermsg_set_display`, and `usermsg_reload_schema`.
 
 Run it with [uv](https://docs.astral.sh/uv/) (dependencies are declared inline,
 nothing is installed globally):
@@ -90,6 +92,17 @@ engine (`g_pMetaHookAPI->HookUserMsg`), decodes each payload per a schema
 description, prints one line per message, and forwards the message to the game
 untouched. Messages the game DLL never hooks are registered display-only, so
 server-only traffic (e.g. svencoop `DeathMsg`, `SelAmmo`) is visible too.
+Every message is also recorded into an in-plugin ring buffer (512 events,
+independent of the display toggle) that `cli.usermsg events` queries:
+
+```text
+cli.usermsg                              # schema + hook state report
+cli.usermsg on|off                       # live console printing (recording unaffected)
+cli.usermsg events [since N] [limit N] [name X]
+                                         # recorded events as "#seq [usermsg] ..." lines
+cli.usermsg list|pending|<name>          # per-message state / field layout
+cli.usermsg reload                       # re-read the schema TOML
+```
 
 Schemas live in `svencoop\metahook\configs\usermsgs\<gamedir>.toml`
 (`configs/usermsgs/` in the repo, installed by `install_plugin.bat`). One file
