@@ -187,7 +187,10 @@ display_channels = "all"    # channels echoed to the console while recorded (com
 [`.github/workflows/build.yml`](.github/workflows/build.yml) builds the plugin
 on every push (`windows-latest`, Win32) and uploads the DLL as a workflow
 artifact. Pushing a `v*` tag additionally publishes a GitHub Release with
-`HalflifeCLI-<tag>.zip`:
+`HalflifeCLI-<tag>.zip` — the plugin DLL plus the usermsg schemas, laid out
+as the game directory expects (`metahook/plugins/`,
+`metahook/configs/halflifecli/usermsgs/`), so extracting it into `svencoop/`
+installs everything:
 
 ```bat
 git tag v0.1.0

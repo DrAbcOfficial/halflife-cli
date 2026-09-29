@@ -38,7 +38,14 @@ jobs:
       - name: Package release zip
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        run: Compress-Archive -Path build/Release/HalflifeCLI.dll -DestinationPath "HalflifeCLI-${{ github.ref_name }}.zip"
+        run: |
+          # Game-dir layout: extracting the zip into "svencoop/" installs the
+          # plugin DLL and the usermsg schemas in one step.
+          $stage = "stage/metahook"
+          New-Item -ItemType Directory -Force -Path "$stage/plugins", "$stage/configs/halflifecli/usermsgs" | Out-Null
+          Copy-Item build/Release/HalflifeCLI.dll "$stage/plugins/"
+          Copy-Item configs/usermsgs/*.toml "$stage/configs/halflifecli/usermsgs/"
+          Compress-Archive -Path stage/metahook -DestinationPath "HalflifeCLI-${{ github.ref_name }}.zip"
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
