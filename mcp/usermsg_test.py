@@ -19,20 +19,19 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from find_game import resolve_game_dir
-from game_process import BANNER_TIMEOUT_S, GameProcess, build_game_argv
+from testcommon import launch_test_game, parse_game_arg, resolve_or_fail
 
 UM_PREFIX = "[usermsg]"
+USAGE = ("Run mcp/find_game.py, set GAME_DIR, write mcp/game_dir.txt, "
+         "or pass --game <path>.")
 
 
 def parse_args():
-    game = connect = None
     argv = sys.argv[1:]
-    if "--game" in argv:
-        game = argv[argv.index("--game") + 1]
+    connect = None
     if "--connect" in argv:
         connect = argv[argv.index("--connect") + 1]
-    return game, connect
+    return parse_game_arg(argv), connect
 
 
 def collect(proc, cursor, seconds):
@@ -48,24 +47,14 @@ def collect(proc, cursor, seconds):
 
 def main():
     game_override, connect_target = parse_args()
-    game_dir, info = resolve_game_dir(game_override)
+    game_dir, info = resolve_or_fail(game_override, USAGE)
     if not game_dir:
-        print(f"FAIL: no game directory resolved ({info}).")
         return 1
     print(f"[test] game dir: {game_dir} (source: {info})")
 
-    proc = GameProcess(build_game_argv(game_dir), cwd=game_dir)
-    proc.start()
-    print(f"[test] launched pid={proc.pid}, waiting for RCON banner...")
-    try:
-        host, port = proc.wait_for_banner(BANNER_TIMEOUT_S)
-    except Exception as e:
-        print(f"FAIL: {e}. Game stdout:")
-        for line in proc.tail(40):
-            print("   |", line)
-        proc.kill()
+    proc, host, port = launch_test_game(game_dir)
+    if proc is None:
         return 1
-    print(f"[test] RCON endpoint {host}:{port}")
 
     failures = []
     try:

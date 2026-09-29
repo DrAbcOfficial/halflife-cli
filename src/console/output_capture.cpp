@@ -1,5 +1,5 @@
-#include "output_capture.h"
-#include "plugins.h"
+#include "console/output_capture.h"
+#include "core/plugins.h"
 
 #include <IVGUI2Extension.h>
 

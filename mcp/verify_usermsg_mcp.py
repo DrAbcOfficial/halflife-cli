@@ -19,9 +19,10 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ["HALFLIFE_DISABLE_ATTACH"] = "1"
 
-import halflife_mcp
 from find_game import resolve_game_dir
 from game_process import BANNER_TIMEOUT_S, GameProcess, build_game_argv
+from halflifecli.manager import Manager
+from halflifecli.plugin_config import plugin_rcon_password
 
 TARGET = "124.221.167.52:28347"
 
@@ -33,12 +34,12 @@ def main():
     host, port = proc.wait_for_banner(BANNER_TIMEOUT_S)
     print("banner:", host, port)
 
-    mgr = halflife_mcp.Manager()
+    mgr = Manager()
     mgr._proc = proc
     mgr._game_dir = gd
     mgr._host = host
     mgr._port = port
-    mgr._password = halflife_mcp.plugin_rcon_password(gd)
+    mgr._password = plugin_rcon_password(gd)
 
     failures = []
     try:

@@ -1,7 +1,7 @@
-#include "console_bridge.h"
-#include "config.h"
-#include "output_capture.h"
-#include "plugins.h"
+#include "console/console_bridge.h"
+#include "config/config.h"
+#include "console/output_capture.h"
+#include "core/plugins.h"
 
 #include <mutex>
 #include <condition_variable>
@@ -202,14 +202,6 @@ namespace ConsoleBridge
 						if (i) text += '\n';
 						text += lines[i];
 					}
-					if (text.empty())
-					{
-						char tbuf[160];
-						_snprintf_s(tbuf, sizeof(tbuf), _TRUNCATE,
-							"pump:token=%llu begin=%llu end=%llu EMPTY",
-							(unsigned long long)p.token,
-							(unsigned long long)p.beginSeq, (unsigned long long)end);
-									}
 					g_bridge.completed[p.token] = std::move(text);
 				}
 				else

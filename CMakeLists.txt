@@ -26,16 +26,22 @@ if(NOT EXISTS "${TOMLPLUSPLUS_DIR}/include/toml++/toml.hpp")
 	message(FATAL_ERROR "tomlplusplus submodule is missing. Run: git submodule update --init --depth 1")
 endif()
 
+# One folder per responsibility: core (lifecycle + cli.* commands), config,
+# console I/O, rcon server, window management, usermsg monitoring, and util
+# (helpers shared across modules).
 add_library(HalflifeCLI SHARED
-	src/plugins.cpp
-	src/exportfuncs.cpp
-	src/config.cpp
-	src/output_capture.cpp
-	src/console_bridge.cpp
-	src/rcon_server.cpp
-	src/window_manager.cpp
-	src/usermsg_schema.cpp
-	src/usermsg_monitor.cpp
+	src/core/plugins.cpp
+	src/core/exportfuncs.cpp
+	src/core/cli_commands.cpp
+	src/config/config.cpp
+	src/console/console_bridge.cpp
+	src/console/output_capture.cpp
+	src/rcon/rcon_server.cpp
+	src/window/window_manager.cpp
+	src/usermsg/usermsg_schema.cpp
+	src/usermsg/usermsg_decoder.cpp
+	src/usermsg/usermsg_monitor.cpp
+	src/util/toml_file.cpp
 	"${METAHOOKSV_DIR}/include/HLSDK/common/interface.cpp"
 )
 

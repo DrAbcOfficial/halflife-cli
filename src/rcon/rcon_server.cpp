@@ -1,5 +1,5 @@
-#include "rcon_server.h"
-#include "console_bridge.h"
+#include "rcon/rcon_server.h"
+#include "console/console_bridge.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>

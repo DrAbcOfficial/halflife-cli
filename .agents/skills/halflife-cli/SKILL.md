@@ -253,14 +253,20 @@ file appearance, and clean quit.
 | Game ignores stdin commands | stdin not actually piped (launched via `start`/bat) | Launch `svencoop.exe` directly with piped stdio, as in the acceptance test |
 | Game does not exit after `quit` | RCON path broken | Send `quit\n` on stdin as fallback, wait ~30 s, then kill as last resort |
 
-Source map, for code-level debugging: `src/plugins.cpp` (lifecycle, banner,
-`cli.*` commands), `src/console_bridge.cpp` (stdin queue, command pump via
+Source map (one src/ folder per responsibility), for code-level debugging:
+`src/core/plugins.cpp` (lifecycle, banner, export overrides),
+`src/core/cli_commands.cpp` (`cli.*` commands, cli.find suggestions),
+`src/console/console_bridge.cpp` (stdin queue, command pump via
 `pfnClientCmd`, RCON response assembly — responses complete on the frame
-after execution), `src/output_capture.cpp` (console capture via VGUI2Extension
-GameConsole callbacks; no engine code hooks),
-`src/rcon_server.cpp` (protocol, auth, limits), `src/window_manager.cpp`
-(hide modes), `src/config.cpp` (TOML config parsing),
-`src/usermsg_schema.cpp` (UserMsg TOML loader with extends inheritance),
-`src/usermsg_monitor.cpp` (UserMsg hooking via `g_pMetaHookAPI->HookUserMsg`,
-wire decoder, 512-event ring, `cli.usermsg` implementation),
-`mcp/acceptance_test.py` (reference automation harness).
+after execution), `src/console/output_capture.cpp` (console capture via
+VGUI2Extension GameConsole callbacks; no engine code hooks),
+`src/rcon/rcon_server.cpp` (protocol, auth, limits),
+`src/window/window_manager.cpp` (hide modes),
+`src/config/config.cpp` (TOML config parsing),
+`src/util/toml_file.cpp` (engine-filesystem TOML reading shared by config and
+schema), `src/usermsg/usermsg_schema.cpp` (UserMsg TOML loader with extends
+inheritance), `src/usermsg/usermsg_decoder.cpp` (wire decoder),
+`src/usermsg/usermsg_monitor.cpp` (UserMsg hooking via
+`g_pMetaHookAPI->HookUserMsg`, 512-event ring, `cli.usermsg` implementation),
+`mcp/halflifecli/` (MCP implementation package; `halflife_mcp.py` is the
+entry point), `mcp/acceptance_test.py` (reference automation harness).

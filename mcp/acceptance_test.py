@@ -19,22 +19,16 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rcon_client
-from find_game import resolve_game_dir
-from game_process import BANNER_TIMEOUT_S, GameProcess, build_game_argv, screenshots_dir
+from game_process import IMAGE_EXTENSIONS, screenshots_dir
+from testcommon import launch_test_game, parse_game_arg, resolve_or_fail
 
-
-def parse_args():
-    if "--game" in sys.argv:
-        return sys.argv[sys.argv.index("--game") + 1]
-    return None
+USAGE = ("Run mcp/find_game.py, set GAME_DIR, write mcp/game_dir.txt, "
+         "or pass --game <path>.")
 
 
 def main():
-    game_dir, info = resolve_game_dir(parse_args())
+    game_dir, info = resolve_or_fail(parse_game_arg(), USAGE)
     if not game_dir:
-        print(f"FAIL: no game directory resolved ({info}).")
-        print("Run mcp/find_game.py, set GAME_DIR, write mcp/game_dir.txt, "
-              "or pass --game <path>.")
         return 1
     print(f"[test] game dir: {game_dir} (source: {info})")
     mod_dir = os.path.join(game_dir, "svencoop")
@@ -53,26 +47,15 @@ def main():
     # Local-file screenshots come from the engine `screenshot` command; the
     # `snapshot` command is taken over by SteamScreenshots.dll and uploads to
     # Steam without writing a file. Format varies (svencoop writes .tga).
-    image_exts = (".bmp", ".tga", ".png", ".jpg", ".jpeg")
     def shots():
         return {os.path.normpath(p) for p in glob.glob(os.path.join(shots_dir, "*"))
-                if p.lower().endswith(image_exts)}
+                if p.lower().endswith(IMAGE_EXTENSIONS)}
 
     shots_before = shots()
 
-    proc = GameProcess(build_game_argv(game_dir), cwd=game_dir)
-    proc.start()
-    print(f"[test] launched pid={proc.pid}, waiting for RCON banner...")
-    try:
-        host, port = proc.wait_for_banner(BANNER_TIMEOUT_S)
-    except Exception as e:
-        print(f"FAIL: {e}. Game stdout:")
-        for line in proc.tail(40):
-            print("   |", line)
-        proc.kill()
+    proc, host, port = launch_test_game(game_dir)
+    if proc is None:
         return 1
-
-    print(f"[test] RCON endpoint {host}:{port}")
 
     # Port file must exist for headless discovery.
     port_file = os.path.join(mod_dir, "metahook", "configs", "halflifecli.port")

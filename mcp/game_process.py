@@ -88,6 +88,12 @@ def screenshots_dir(game_dir):
     return os.path.join(mod_dir(game_dir), "screenshots")
 
 
+# Local-file screenshot formats the engine writes, depending on engine and mod
+# config (svencoop's `screenshot` writes .tga; `snapshot` is taken over by
+# SteamScreenshots.dll and uploads to Steam instead of writing a file).
+IMAGE_EXTENSIONS = (".bmp", ".tga", ".png", ".jpg", ".jpeg")
+
+
 def rcon_connect_host(bind):
     """Address that reaches the plugin's RCON server for a configured bind.
 

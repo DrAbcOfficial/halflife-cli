@@ -30,7 +30,15 @@ import game_process
 import rcon_client
 import halflife_mcp
 from game_process import BANNER_RE, GameProcess
-from halflife_mcp import find_new_screenshot, read_plugin_config, shot_to_png
+from halflifecli.manager import Manager
+from halflifecli.plugin_config import read_plugin_config
+from halflifecli.screenshot import find_new_screenshot, shot_to_png
+from halflifecli.usermsg import (
+    load_usermsg_schema,
+    parse_usermsg_events,
+    parse_usermsg_status,
+    sync_usermsg_schemas,
+)
 
 os.environ["HALFLIFE_DISABLE_ATTACH"] = "1"
 
@@ -154,7 +162,7 @@ class TestUserMsgParsers(unittest.TestCase):
     def test_parse_status(self):
         line = ("cli.usermsg: schema=svencoop.toml coord_size=4 messages=101 "
                 "display=on hooks: 85 wrapped, 16 self-registered, 0 pending")
-        st = halflife_mcp.parse_usermsg_status(line)
+        st = parse_usermsg_status(line)
         self.assertEqual(st.schema_file, "svencoop.toml")
         self.assertEqual(st.coord_size, 4)
         self.assertEqual(st.messages, 101)
@@ -162,8 +170,8 @@ class TestUserMsgParsers(unittest.TestCase):
         self.assertEqual((st.wrapped, st.self_registered, st.pending), (85, 16, 0))
 
     def test_parse_status_garbage(self):
-        self.assertIsNone(halflife_mcp.parse_usermsg_status("some other console spam"))
-        self.assertIsNone(halflife_mcp.parse_usermsg_status(""))
+        self.assertIsNone(parse_usermsg_status("some other console spam"))
+        self.assertIsNone(parse_usermsg_status(""))
 
     def test_parse_events(self):
         text = "\n".join([
@@ -174,7 +182,7 @@ class TestUserMsgParsers(unittest.TestCase):
             "#42 [usermsg] StartSound size=19 raw 18 00 01",
             "cli.usermsg: 7 more after #42 (raise since)",
         ])
-        events, newest, more = halflife_mcp.parse_usermsg_events(text)
+        events, newest, more = parse_usermsg_events(text)
         self.assertEqual(newest, 42)
         self.assertEqual(more, 7)
         self.assertEqual([e.seq for e in events], [40, 41, 42])
@@ -185,7 +193,7 @@ class TestUserMsgParsers(unittest.TestCase):
 
     def test_parse_events_empty(self):
         text = "cli.usermsg: events newest=0 name=*\ncli.usermsg: no matching events"
-        events, newest, more = halflife_mcp.parse_usermsg_events(text)
+        events, newest, more = parse_usermsg_events(text)
         self.assertEqual(events, [])
         self.assertEqual(newest, 0)
         self.assertIsNone(more)
@@ -210,7 +218,7 @@ class TestUserMsgParsers(unittest.TestCase):
     def test_load_schema_merge(self):
         with tempfile.TemporaryDirectory() as d:
             self._write_game_dir(d)
-            schema = halflife_mcp.load_usermsg_schema(d)
+            schema = load_usermsg_schema(d)
             self.assertEqual(schema.schema_file, "svencoop.toml")
             self.assertEqual(schema.extends, "valve.toml")
             self.assertEqual(schema.coord_size, 4)
@@ -224,13 +232,13 @@ class TestUserMsgParsers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             from mcp.server.mcpserver.exceptions import ToolError
             with self.assertRaises(ToolError):
-                halflife_mcp.load_usermsg_schema(d)
+                load_usermsg_schema(d)
 
     def test_sync_schemas(self):
         with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as game:
             with open(os.path.join(src, "a.toml"), "wb") as f:
                 f.write(b"[[usermsg]]\nname = \"X\"\nfields = []\n")
-            n = halflife_mcp.sync_usermsg_schemas(game, src)
+            n = sync_usermsg_schemas(game, src)
             self.assertEqual(n, 1)
             self.assertTrue(os.path.exists(
                 os.path.join(game, "svencoop", "metahook", "configs", "usermsgs", "a.toml")))
@@ -367,7 +375,7 @@ class TestToolsOverMemory(unittest.TestCase):
     def test_run_and_find(self):
         fake_srv = FakeRconServer(password="pw", echo=True)
         try:
-            mgr = halflife_mcp.Manager()
+            mgr = Manager()
             _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
             mgr._password = "pw"
             server = self._client(mgr)
@@ -387,7 +395,7 @@ class TestToolsOverMemory(unittest.TestCase):
     def test_wrong_password_is_tool_error(self):
         fake_srv = FakeRconServer(password="right", echo=True)
         try:
-            mgr = halflife_mcp.Manager()
+            mgr = Manager()
             _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
             mgr._password = "wrong"
             server = self._client(mgr)
@@ -402,7 +410,7 @@ class TestToolsOverMemory(unittest.TestCase):
             fake_srv.close()
 
     def test_no_game(self):
-        mgr = halflife_mcp.Manager()
+        mgr = Manager()
         server = self._client(mgr)
 
         async def main():
@@ -427,7 +435,7 @@ class TestToolsOverMemory(unittest.TestCase):
             "cli.usermsg": report,
         })
         try:
-            mgr = halflife_mcp.Manager()
+            mgr = Manager()
             _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
             mgr._password = "pw"
 
@@ -450,7 +458,7 @@ class TestToolsOverMemory(unittest.TestCase):
     def test_usermsg_status_rejects_garbage(self):
         fake_srv = FakeRconServer(password="pw", echo=True)  # echoes, no report line
         try:
-            mgr = halflife_mcp.Manager()
+            mgr = Manager()
             _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
             mgr._password = "pw"
 
