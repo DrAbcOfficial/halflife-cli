@@ -25,7 +25,8 @@ USERMSG_STATUS_RE = re.compile(
 
 # "#17 [usermsg] CurWeapon size=5 state=1 weaponId=18 clip=35"
 USERMSG_EVENT_RE = re.compile(r"#(\d+) \[usermsg\] (\S+) size=(\d+)(?: (.*))?$", re.MULTILINE)
-USERMSG_EVENTS_NEWEST_RE = re.compile(r"cli\.usermsg: events newest=(\d+) name=(.*)$", re.MULTILINE)
+USERMSG_EVENTS_NEWEST_RE = re.compile(
+    r"cli\.usermsg: events channel=(\S+) newest=(\d+) name=(.*)$", re.MULTILINE)
 USERMSG_EVENTS_MORE_RE = re.compile(r"cli\.usermsg: (\d+) more after #\d+", re.MULTILINE)
 
 
@@ -45,7 +46,7 @@ def parse_usermsg_events(text):
     newest = 0
     m = USERMSG_EVENTS_NEWEST_RE.search(text)
     if m:
-        newest = int(m.group(1))
+        newest = int(m.group(2))
     events = [UserMsgEvent(seq=int(m.group(1)), name=m.group(2), size=int(m.group(3)),
                            detail=m.group(4) or "")
               for m in USERMSG_EVENT_RE.finditer(text)]

@@ -1,5 +1,6 @@
 #include "rcon/rcon_server.h"
 #include "console/console_bridge.h"
+#include "util/text.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -250,22 +251,9 @@ namespace RconServer
 		g_port = result.port;
 
 		g_password = password;
-		g_allowedIps.clear();
-		size_t pos = 0;
-		while (pos <= allowedIps.size())
-		{
-			size_t comma = allowedIps.find(',', pos);
-			if (comma == std::string::npos)
-				comma = allowedIps.size();
-			std::string item = allowedIps.substr(pos, comma - pos);
-			while (!item.empty() && (item.front() == ' ' || item.front() == '\t')) item.erase(item.begin());
-			while (!item.empty() && (item.back() == ' ' || item.back() == '\t')) item.pop_back();
-			// An empty configured list must stay empty: pushing "" here would
-			// turn IpAllowed into "deny everything".
-			if (!item.empty())
-				g_allowedIps.push_back(item);
-			pos = comma + 1;
-		}
+		// SplitCsv skips empty items, so an empty configured list stays empty
+		// and IpAllowed keeps meaning "bind address only".
+		g_allowedIps = text::SplitCsv(allowedIps);
 
 		g_running = true;
 		g_listenerThread = std::thread(ListenerThread);

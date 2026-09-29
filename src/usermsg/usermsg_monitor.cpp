@@ -2,6 +2,7 @@
 
 #include "config/config.h"
 #include "core/plugins.h"
+#include "usermsg/event_log.h"
 #include "usermsg/usermsg_decoder.h"
 #include "usermsg/usermsg_schema.h"
 #include "util/text.h"
@@ -10,14 +11,15 @@
 
 #include <cstdio>
 #include <cstring>
-#include <deque>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 // Hooks the user-message entries the client game DLL registers with the
-// engine, decodes payloads via UserMsgDecoder, records every message in a
-// ring buffer, and answers the "cli.usermsg" console command.
+// engine, decodes payloads via UserMsgDecoder, records every message in the
+// channel-keyed EventLog (the whole stream is one "usermsg" channel), and
+// answers the "cli.usermsg" console command.
 
 namespace
 {
@@ -28,26 +30,21 @@ namespace
 		bool known = false;                 // an engine entry carries our dispatcher
 	};
 
-	// One decoded message kept for querying ("cli.usermsg events"). Recorded
-	// even when console display is off, so the monitor doubles as a traffic
-	// recorder.
-	struct UserMsgEvent
-	{
-		uint64_t seq;      // monotonic, 1-based; survives display toggles
-		std::string line;  // "[usermsg] Name size=N field=value ..."
-	};
-
-	constexpr size_t kMaxEvents = 512;
 	// cli.usermsg events/list budget: the RCON response body caps at 4096
 	// bytes and other console output rides along, so stop well before that.
 	constexpr size_t kReplyByteBudget = 3300;
 
-	std::vector<HookEntry> g_entries;
-	std::deque<UserMsgEvent> g_events;
-	uint64_t g_nextSeq = 1;
+	// Channel every decoded user-message line is recorded under; future
+	// recorders can split this into per-message channels without touching
+	// the EventLog or the query plumbing.
+	constexpr const char* kUsermsgChannel = "usermsg";
+
+	EventLog g_eventLog(512);       // per-channel ring capacity
+	std::set<std::string> g_displayChannels = { kUsermsgChannel };
 	UserMsgSchema g_schema;
 	std::string g_schemaFile;
-	bool g_display = true;          // cli.usermsg on|off (recording is unaffected)
+	std::vector<HookEntry> g_entries;
+	bool g_display = true;          // cli.usermsg on|off (master gate; recording is unaffected)
 	bool g_pendingReload = false;
 	bool g_reported = false;        // hook-state summary printed once per (re)load
 	size_t g_maxString = 64;
@@ -64,7 +61,7 @@ namespace
 	// ---------------------------------------------------------------- hooks
 
 	int UserMsg_Dispatch(const char* pszName, int iSize, void* pbuf);
-	void PrintMessage(const UserMsgDef& def, int iSize, void* pbuf);
+	void HandleMessage(const UserMsgDef& def, int iSize, void* pbuf);
 
 	// Single dispatcher for every monitored message: the engine passes the
 	// registered name as the first argument, so one function serves all.
@@ -74,8 +71,10 @@ namespace
 		if (!e)
 			return 0;  // not ours; should not happen
 
-		if (g_display && iSize >= 0 && pbuf)
-			PrintMessage(*e->def, iSize, pbuf);
+		// Recording is unconditional (the EventLog is the traffic recorder);
+		// the console echo is gated on the master toggle and the channel list.
+		if (iSize >= 0 && pbuf)
+			HandleMessage(*e->def, iSize, pbuf);
 
 		if (e->original)
 			return e->original(pszName, iSize, pbuf);
@@ -127,21 +126,14 @@ namespace
 		}
 	}
 
-	// ---------------------------------------------------------------- print
+	// ------------------------------------------------------- record + echo
 
-	void RecordEvent(std::string line)
-	{
-		if (g_events.size() >= kMaxEvents)
-			g_events.pop_front();
-		g_events.push_back({ g_nextSeq, std::move(line) });
-		++g_nextSeq;
-	}
-
-	void PrintMessage(const UserMsgDef& def, int iSize, void* pbuf)
+	void HandleMessage(const UserMsgDef& def, int iSize, void* pbuf)
 	{
 		std::string line = UserMsgDecoder::Format(g_schema, def, iSize, pbuf, g_maxString);
-		RecordEvent(line);
-		gEngfuncs.Con_Printf("%s\n", line.c_str());
+		g_eventLog.Record(kUsermsgChannel, line);
+		if (g_display && g_displayChannels.count(kUsermsgChannel))
+			gEngfuncs.Con_Printf("%s\n", line.c_str());
 	}
 
 	// --------------------------------------------------------------- schema
@@ -182,6 +174,10 @@ namespace
 	void LoadSchema()
 	{
 		g_maxString = CLI_Config().usermsg_max_string > 0 ? (size_t)CLI_Config().usermsg_max_string : 64;
+
+		g_displayChannels.clear();
+		for (const std::string& ch : text::SplitCsv(CLI_Config().usermsg_display_channels))
+			g_displayChannels.insert(text::Lowercase(ch));
 
 		g_schemaFile = CLI_Config().usermsg_file;
 		if (g_schemaFile.empty())
@@ -293,7 +289,7 @@ namespace UserMsgMonitor
 	void Shutdown()
 	{
 		g_entries.clear();
-		g_events.clear();
+		g_eventLog.Clear();
 		g_schema.messages.clear();
 		g_schema.index.clear();
 		g_reported = false;
@@ -322,6 +318,7 @@ namespace UserMsgMonitor
 		bool haveSince = false;
 		size_t limit = 20;
 		const char* nameFilter = "";
+		std::string channel = kUsermsgChannel;
 
 		for (int i = 2; i + 1 < gEngfuncs.Cmd_Argc(); i += 2)
 		{
@@ -335,48 +332,48 @@ namespace UserMsgMonitor
 				limit = (size_t)atol(gEngfuncs.Cmd_Argv(i + 1));
 			else if (!_stricmp(key, "name"))
 				nameFilter = gEngfuncs.Cmd_Argv(i + 1);
+			else if (!_stricmp(key, "channel"))
+				channel = text::Lowercase(gEngfuncs.Cmd_Argv(i + 1));
 		}
 		if (limit < 1)
 			limit = 1;
 		if (limit > 200)
 			limit = 200;
 		// No explicit cursor: show the tail of the ring.
-		if (!haveSince && g_nextSeq > limit)
-			since = g_nextSeq - limit - 1;
+		if (!haveSince && g_eventLog.NewestSeq() > limit)
+			since = g_eventLog.NewestSeq() - limit - 1;
 
 		char b[96];
-		_snprintf_s(b, sizeof(b), _TRUNCATE, "cli.usermsg: events newest=%llu name=%s",
-			(unsigned long long)(g_nextSeq - 1), *nameFilter ? nameFilter : "*");
+		_snprintf_s(b, sizeof(b), _TRUNCATE, "cli.usermsg: events channel=%s newest=%llu name=%s",
+			channel.c_str(), (unsigned long long)g_eventLog.NewestSeq(), *nameFilter ? nameFilter : "*");
 		gEngfuncs.Con_Printf("%s\n", b);
 
 		size_t shown = 0, more = 0;
 		size_t bytes = 0;
 		uint64_t lastShown = 0;
-		for (const UserMsgEvent& e : g_events)
+		g_eventLog.ForEach(channel, since, [&](uint64_t seq, const std::string& line)
 		{
-			if (e.seq <= since)
-				continue;
-			if (!EventNameMatches(e.line, nameFilter))
-				continue;
+			if (!EventNameMatches(line, nameFilter))
+				return;
 			if (shown >= limit)
 			{
 				++more;
-				continue;
+				return;
 			}
 			char nb[32];
-			_snprintf_s(nb, sizeof(nb), _TRUNCATE, "#%llu ", (unsigned long long)e.seq);
+			_snprintf_s(nb, sizeof(nb), _TRUNCATE, "#%llu ", (unsigned long long)seq);
 			std::string out = nb;
-			out += e.line;
+			out += line;
 			if (shown > 0 && bytes + out.size() + 1 > kReplyByteBudget)
 			{
 				++more;
-				continue;
+				return;
 			}
 			bytes += out.size() + 1;
 			gEngfuncs.Con_Printf("%s\n", out.c_str());
 			++shown;
-			lastShown = e.seq;
-		}
+			lastShown = seq;
+		});
 		if (!shown)
 			gEngfuncs.Con_Printf("cli.usermsg: no matching events\n");
 		else if (more)
@@ -510,6 +507,6 @@ namespace UserMsgMonitor
 		}
 
 		ReportState();
-		gEngfuncs.Con_Printf("cli.usermsg: usage: on|off|reload|list|pending|events [since N] [limit N] [name X]|<name>\n");
+		gEngfuncs.Con_Printf("cli.usermsg: usage: on|off|reload|list|pending|events [channel C] [since N] [limit N] [name X]|<name>\n");
 	}
 }

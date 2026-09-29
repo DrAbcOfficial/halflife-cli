@@ -63,6 +63,7 @@ bool CliConfig::Load()
 		SetInt(*usermsg, "enabled", usermsg_enabled);
 		SetString(*usermsg, "file", usermsg_file);
 		SetInt(*usermsg, "max_string", usermsg_max_string);
+		SetString(*usermsg, "display_channels", usermsg_display_channels);
 	}
 	return true;
 }

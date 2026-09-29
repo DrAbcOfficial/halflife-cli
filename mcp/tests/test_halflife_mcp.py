@@ -176,7 +176,7 @@ class TestUserMsgParsers(unittest.TestCase):
     def test_parse_events(self):
         text = "\n".join([
             "Some unrelated engine line",
-            "cli.usermsg: events newest=42 name=*",
+            "cli.usermsg: events channel=usermsg newest=42 name=*",
             "#40 [usermsg] CurWeapon size=5 state=1 weaponId=18 clip=35",
             "#41 [usermsg] SayText size=48 client=1 text=\"hi there\"",
             "#42 [usermsg] StartSound size=19 raw 18 00 01",
@@ -192,7 +192,7 @@ class TestUserMsgParsers(unittest.TestCase):
         self.assertEqual(events[2].detail, "raw 18 00 01")
 
     def test_parse_events_empty(self):
-        text = "cli.usermsg: events newest=0 name=*\ncli.usermsg: no matching events"
+        text = "cli.usermsg: events channel=usermsg newest=0 name=*\ncli.usermsg: no matching events"
         events, newest, more = parse_usermsg_events(text)
         self.assertEqual(events, [])
         self.assertEqual(newest, 0)
@@ -425,7 +425,7 @@ class TestToolsOverMemory(unittest.TestCase):
         report = ("cli.usermsg: schema=svencoop.toml coord_size=4 messages=101 "
                   "display=on hooks: 85 wrapped, 16 self-registered, 0 pending")
         events_page = "\n".join([
-            "cli.usermsg: events newest=42 name=CurWeapon",
+            "cli.usermsg: events channel=usermsg newest=42 name=CurWeapon",
             "#40 [usermsg] CurWeapon size=5 state=1 weaponId=18 clip=35",
             "#42 [usermsg] CurWeapon size=5 state=0 weaponId=18 clip=-1",
         ])
