@@ -3,6 +3,7 @@
 #include "config/config.h"
 #include "console/console_bridge.h"
 #include "core/plugins.h"
+#include "input/input_lock.h"
 #include "rcon/rcon_server.h"
 #include "usermsg/usermsg_monitor.h"
 #include "util/text.h"
@@ -27,6 +28,7 @@ namespace
 		ConsoleBridge::WriteOut("halflife-cli commands:");
 		ConsoleBridge::WriteOut("  cli.rconinfo        - show RCON endpoint info");
 		ConsoleBridge::WriteOut("  cli.window <0|1|2>  - 0=show 1=off-screen(default) 2=SW_HIDE");
+		ConsoleBridge::WriteOut("  cli.inputlock on|off - lock the mouse cursor so it stops driving the view");
 		ConsoleBridge::WriteOut("  cli.find <name>     - check cvar/command existence, suggests similar names");
 		ConsoleBridge::WriteOut("  cli.usermsg         - UserMsg monitor: on|off|reload|list|pending|<name>");
 		ConsoleBridge::WriteOut("  cli.help            - this help");
@@ -56,6 +58,31 @@ namespace
 		}
 		WindowManager::SetMode(atoi(gEngfuncs.Cmd_Argv(1)));
 		ConsoleBridge::WriteOut("cli.window applied");
+	}
+
+	void Cmd_CliInputLock(void)
+	{
+		if (gEngfuncs.Cmd_Argc() < 2)
+		{
+			unsigned getCalls = 0, setCalls = 0, relCalls = 0, warpCalls = 0, motionCalls = 0;
+			int lastDx = 0, lastDy = 0;
+			InputLock::GetHookStats(getCalls, setCalls, relCalls, warpCalls, motionCalls, lastDx, lastDy);
+			gEngfuncs.Con_Printf("cli.inputlock: %s (hooks=%s, calls: get=%u set=%u rel=%u warp=%u motion=%u last=(%d,%d))\n",
+				InputLock::GetActive() ? "on" : "off",
+				InputLock::HooksInstalled() ? "installed" : "missing (client does not import cursor calls)",
+				getCalls, setCalls, relCalls, warpCalls, motionCalls, lastDx, lastDy);
+			return;
+		}
+		const char* arg = gEngfuncs.Cmd_Argv(1);
+		if (!_stricmp(arg, "on") || !_stricmp(arg, "off"))
+		{
+			InputLock::SetActive(!_stricmp(arg, "on"));
+			gEngfuncs.Con_Printf("cli.inputlock: %s\n", InputLock::GetActive() ? "on" : "off");
+		}
+		else
+		{
+			gEngfuncs.Con_Printf("usage: cli.inputlock [on|off] - lock the mouse cursor so it stops driving the view\n");
+		}
 	}
 
 	// Plain Levenshtein distance; cvar/command names are short so O(len*len) is fine.
@@ -191,6 +218,7 @@ void CliCommands::RegisterAll()
 	gEngfuncs.pfnAddCommand("cli.help", Cmd_CliHelp);
 	gEngfuncs.pfnAddCommand("cli.rconinfo", Cmd_CliRconInfo);
 	gEngfuncs.pfnAddCommand("cli.window", Cmd_CliWindow);
+	gEngfuncs.pfnAddCommand("cli.inputlock", Cmd_CliInputLock);
 	gEngfuncs.pfnAddCommand("cli.find", Cmd_CliFind);
 	gEngfuncs.pfnAddCommand("cli.usermsg", Cmd_CliUserMsg);
 }

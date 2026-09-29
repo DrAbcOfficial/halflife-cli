@@ -4,6 +4,7 @@
 #include "config/config.h"
 #include "console/console_bridge.h"
 #include "console/output_capture.h"
+#include "input/input_lock.h"
 #include "rcon/rcon_server.h"
 #include "usermsg/usermsg_monitor.h"
 #include "window/window_manager.h"
@@ -51,6 +52,7 @@ void IPluginsV4::Shutdown(void)
 	RconServer::Shutdown();
 	ConsoleBridge::Shutdown();
 	OutputCapture::Shutdown();
+	InputLock::Shutdown();
 	UserMsgMonitor::Shutdown();
 }
 
@@ -99,6 +101,11 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	}
 	WindowManager::SetBlockInput(CLI_Config().block_input);
 
+	// After gExportfuncs is captured: the client module is fully loaded, so
+	// its IAT can be patched. Pass-through while the lock is off.
+	InputLock::InstallHooks();
+	InputLock::SetActive(CLI_Config().input_lock);
+
 	if (CLI_Config().rcon)
 	{
 		RconServer::StartResult r = RconServer::Start(
@@ -134,6 +141,7 @@ void IPluginsV4::ExitGame(int iResult)
 {
 	RconServer::Shutdown();
 	ConsoleBridge::Shutdown();
+	InputLock::Shutdown();
 	WindowManager::Restore();
 	UserMsgMonitor::Shutdown();
 }

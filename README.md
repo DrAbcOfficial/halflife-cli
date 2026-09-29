@@ -70,7 +70,9 @@ take a minute.
 - **stdin**: every line is executed as a game console command (`status`,
   `map osprey`, `screenshot`, `quit`, ...). Plugin commands: `cli.help`,
   `cli.rconinfo`, `cli.window <0|1|2>` (0=show, 1=off-screen default,
-  2=SW_HIDE; note SW_HIDE may pause rendering on some engines), and
+  2=SW_HIDE; note SW_HIDE may pause rendering on some engines),
+  `cli.inputlock [on|off]` (lock the mouse cursor so it stops driving the
+  view; no argument reports the state), and
   `cli.find <name>` to check whether a cvar/command exists — when it does
   not, up to 10 similar names (substring match or small edit distance) are
   suggested, e.g. `cli.find abc` → `similar names: ab, ac, bc, c`.
@@ -172,6 +174,7 @@ allowed_ips = ""            # comma separated whitelist; empty = bind address on
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
 block_input = false         # true = the game window ignores mouse/keyboard (CLI console unaffected)
+input_lock = false          # true = lock the mouse so it stops driving the view (cli.inputlock toggles at runtime)
 developer = 1               # set the developer cvar at startup
 console_topmost = false     # keep the CLI console window always on top
 

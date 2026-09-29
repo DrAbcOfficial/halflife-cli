@@ -68,6 +68,7 @@ bool CliConfig::Load()
 	{
 		SetInt(*cli, "hide_window", hide_window);
 		SetBool(*cli, "block_input", block_input);
+		SetBool(*cli, "input_lock", input_lock);
 		SetInt(*cli, "developer", developer);
 		SetBool(*cli, "capture", capture);
 		SetBool(*cli, "console", console);

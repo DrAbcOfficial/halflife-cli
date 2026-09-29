@@ -27,8 +27,8 @@ if(NOT EXISTS "${TOMLPLUSPLUS_DIR}/include/toml++/toml.hpp")
 endif()
 
 # One folder per responsibility: core (lifecycle + cli.* commands), config,
-# console I/O, rcon server, window management, usermsg monitoring, and util
-# (helpers shared across modules).
+# console I/O, input locking, rcon server, window management, usermsg
+# monitoring, and util (helpers shared across modules).
 add_library(HalflifeCLI SHARED
 	src/core/plugins.cpp
 	src/core/exportfuncs.cpp
@@ -36,6 +36,7 @@ add_library(HalflifeCLI SHARED
 	src/config/config.cpp
 	src/console/console_bridge.cpp
 	src/console/output_capture.cpp
+	src/input/input_lock.cpp
 	src/rcon/rcon_server.cpp
 	src/window/window_manager.cpp
 	src/usermsg/usermsg_schema.cpp

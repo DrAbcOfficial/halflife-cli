@@ -18,5 +18,6 @@ namespace WindowManager
 	int GetMode();
 	void SetBlockInput(bool block);      // true = the game window ignores mouse/keyboard
 	bool GetBlockInput();
+	void* GetGameWindow();               // cached game HWND as void* (keeps <windows.h> out of this header); null when not found
 	void Restore();                      // best effort restore on shutdown
 }

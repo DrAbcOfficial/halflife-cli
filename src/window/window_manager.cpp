@@ -79,6 +79,13 @@ namespace WindowManager
 		return g_blockInput;
 	}
 
+	void* GetGameWindow()
+	{
+		if (!IsWindow(g_hwnd))
+			g_hwnd = FindGameWindow();
+		return g_hwnd;
+	}
+
 	// Runs every frame; cheap after the first pass. Re-asserts the hide mode
 	// and the input-block state because the engine can recreate the window
 	// on mode or video restarts.
