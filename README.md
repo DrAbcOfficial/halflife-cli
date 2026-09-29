@@ -75,9 +75,52 @@ take a minute.
 - **stdout mirror**: all captured console output is echoed live, including
   `Con_DPrintf` output when the engine routes it to the vgui console (the
   plugin sets `developer 1` by default so it does).
+- **UserMsg monitor**: every server user message the game receives is decoded
+  per a TOML schema and printed as one `[usermsg] Name size=N field=value ...`
+  console line (see below). `cli.usermsg` reports the hook state;
+  `cli.usermsg on|off|reload|list|pending|<name>` controls it.
 - **RCON**: `mcp/rcon_client.py <host> <port> <password> "cmd" ...` or any
   standard Source RCON client. The bound port is written to
   `svencoop\metahook\configs\halflifecli.port` for discovery.
+
+## UserMsg monitor
+
+The plugin wraps the user-message hooks the client game DLL registers with the
+engine (`g_pMetaHookAPI->HookUserMsg`), decodes each payload per a schema
+description, prints one line per message, and forwards the message to the game
+untouched. Messages the game DLL never hooks are registered display-only, so
+server-only traffic (e.g. svencoop `DeathMsg`, `SelAmmo`) is visible too.
+
+Schemas live in `svencoop\metahook\configs\usermsgs\<gamedir>.toml`
+(`configs/usermsgs/` in the repo, installed by `install_plugin.bat`). One file
+per `-game` folder: `valve.toml` (Half-Life), `cstrike.toml`,
+`svencoop.toml`. A file may inherit a base with
+`extends = "valve.toml"` and then only define messages whose wire format
+differs. Field syntax:
+
+```toml
+[primitives]
+coord_size = 2            # 2 = short*1/8 (hl/cstrike), 4 = long*1/8 (svencoop)
+
+[[usermsg]]
+name = "StatusIcon"
+fields = [
+    { name = "enable", type = "byte" },
+    { name = "icon", type = "string" },
+    { name = "rgb", type = "byte", count = 3, when = { field = "enable", ne = 0 } },
+]
+```
+
+Types: `byte char short word long float coord angle angle16 string vec3
+group`; `count` is a number, the name of a previously-read field, or `*`
+(until the buffer runs out); `when` makes a field (or group) conditional.
+`raw = true` dumps the payload as hex instead of parsing. The definitions are
+transcribed from the reverse-engineering notes in `.zcode/networkmessages/`
+(gitignored).
+
+`python mcp/usermsg_test.py [--connect HOST:PORT]` runs the acceptance flow:
+launches the game, checks the hook report, and captures `[usermsg]` traffic
+from a local map or a game server.
 
 ## Dependencies
 
@@ -104,6 +147,11 @@ allowed_ips = ""            # comma separated whitelist; empty = bind address on
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
 developer = 1               # set the developer cvar at startup
 console_topmost = 0         # 1 = keep the CLI console window always on top
+
+[usermsg]
+enabled = 1                 # hook + decode server user messages
+file = ""                   # schema file; empty = "<gamedir>.toml" in configs/usermsgs/
+max_string = 64             # truncate decoded strings longer than this
 ```
 
 ## CI

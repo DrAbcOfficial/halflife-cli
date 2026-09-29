@@ -34,6 +34,8 @@ add_library(HalflifeCLI SHARED
 	src/console_bridge.cpp
 	src/rcon_server.cpp
 	src/window_manager.cpp
+	src/usermsg_schema.cpp
+	src/usermsg_monitor.cpp
 	"${METAHOOKSV_DIR}/include/HLSDK/common/interface.cpp"
 )
 

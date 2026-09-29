@@ -18,6 +18,11 @@ struct CliConfig
 	int console_topmost = 0;                  // keep the CLI console window always on top
 	int rcon = 1;                             // RCON server
 
+	// [usermsg]
+	int usermsg_enabled = 1;                  // hook + decode server user messages (metahook/configs/usermsgs/)
+	std::string usermsg_file;                 // schema file name; empty = "<gamedir>.toml"
+	int usermsg_max_string = 64;              // truncate decoded strings longer than this
+
 	bool Load();
 };
 

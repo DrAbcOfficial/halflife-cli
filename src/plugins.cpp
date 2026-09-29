@@ -5,6 +5,7 @@
 #include "console_bridge.h"
 #include "rcon_server.h"
 #include "window_manager.h"
+#include "usermsg_monitor.h"
 
 #include <metahook.h>
 #include <cvardef.h>
@@ -39,6 +40,7 @@ void IPluginsV4::Shutdown(void)
 	RconServer::Shutdown();
 	ConsoleBridge::Shutdown();
 	OutputCapture::Shutdown();
+	UserMsgMonitor::Shutdown();
 }
 
 void IPluginsV4::LoadEngine(cl_enginefunc_t *pEngfuncs)
@@ -63,9 +65,12 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	memcpy(&gExportfuncs, pExportFunc, sizeof(gExportfuncs));
 
 	pExportFunc->HUD_Init = HUD_Init;
+	pExportFunc->HUD_VidInit = HUD_VidInit;
 	pExportFunc->HUD_Frame = HUD_Frame;
 
 	CLI_Config().Load();
+	if (CLI_Config().usermsg_enabled)
+		UserMsgMonitor::Init();
 	if (CLI_Config().console)
 	{
 		ConsoleBridge::Init();
@@ -118,6 +123,12 @@ void IPluginsV4::ExitGame(int iResult)
 	RconServer::Shutdown();
 	ConsoleBridge::Shutdown();
 	WindowHide::Restore();
+	UserMsgMonitor::Shutdown();
+}
+
+static void Cmd_CliUserMsg(void)
+{
+	UserMsgMonitor::CmdUserMsg();
 }
 
 static void Cmd_CliHelp(void)
@@ -128,6 +139,7 @@ static void Cmd_CliHelp(void)
 	ConsoleBridge::WriteOut("  cli.rconinfo        - show RCON endpoint info");
 	ConsoleBridge::WriteOut("  cli.window <0|1|2>  - 0=show 1=off-screen(default) 2=SW_HIDE");
 	ConsoleBridge::WriteOut("  cli.find <name>     - check cvar/command existence, suggests similar names");
+	ConsoleBridge::WriteOut("  cli.usermsg         - UserMsg monitor: on|off|reload|list|pending|<name>");
 	ConsoleBridge::WriteOut("  cli.help            - this help");
 	ConsoleBridge::WriteOut("any other line is executed as a game console command (e.g. 'status', 'snapshot')");
 }
@@ -293,9 +305,23 @@ void HUD_Init(void)
 	gEngfuncs.pfnAddCommand("cli.rconinfo", Cmd_CliRconInfo);
 	gEngfuncs.pfnAddCommand("cli.window", Cmd_CliWindow);
 	gEngfuncs.pfnAddCommand("cli.find", Cmd_CliFind);
+	gEngfuncs.pfnAddCommand("cli.usermsg", Cmd_CliUserMsg);
 
 	if (CLI_Config().developer > 0)
 		gEngfuncs.Cvar_SetValue("developer", (float)CLI_Config().developer);
+
+	// Wrap whatever the client DLL registered in its own HUD_Init first, so
+	// user messages dispatched this session land in our decoder.
+	UserMsgMonitor::OnHudInit();
+}
+
+int HUD_VidInit(void)
+{
+	int result = gExportfuncs.HUD_VidInit();
+	// The client DLL may (re-)register usermsg hooks here on every map load;
+	// re-assert our wrappers after it is done.
+	UserMsgMonitor::OnHudVidInit();
+	return result;
 }
 
 static int g_frames = 0;
@@ -311,6 +337,7 @@ void HUD_Frame(double time)
 
 	WindowHide::ApplyConfiguredMode();
 	ConsoleBridge::PumpCommands();
+	UserMsgMonitor::Frame();
 
 	gExportfuncs.HUD_Frame(time);
 }

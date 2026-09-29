@@ -73,5 +73,11 @@ bool CliConfig::Load()
 		SetInt(*cli, "console_topmost", console_topmost);
 		SetInt(*cli, "rcon", rcon);
 	}
+	if (const toml::table* usermsg = tbl["usermsg"].as_table())
+	{
+		SetInt(*usermsg, "enabled", usermsg_enabled);
+		SetString(*usermsg, "file", usermsg_file);
+		SetInt(*usermsg, "max_string", usermsg_max_string);
+	}
 	return true;
 }

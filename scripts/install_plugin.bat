@@ -17,6 +17,8 @@ if "%GameDir%"=="" (
 set "PluginSrc=%RepoDir%\build\Release\HalflifeCLI.dll"
 set "PluginDst=%GameDir%\svencoop\metahook\plugins\HalflifeCLI.dll"
 set "PluginsLst=%GameDir%\svencoop\metahook\configs\plugins.lst"
+set "SchemaSrc=%RepoDir%\configs\usermsgs"
+set "SchemaDst=%GameDir%\svencoop\metahook\configs\usermsgs"
 
 if not exist "%PluginSrc%" (
     echo ERROR: %PluginSrc% not found. Build first:
@@ -60,6 +62,15 @@ if errorlevel 1 (
     echo Added HalflifeCLI.dll to plugins.lst
 ) else (
     echo plugins.lst already lists HalflifeCLI.dll
+)
+
+:: UserMsg schema definitions (per-game TOML) next to the plugin config.
+if not exist "%SchemaSrc%\valve.toml" (
+    echo WARNING: %SchemaSrc%\valve.toml not found, usermsg schemas not installed.
+) else (
+    if not exist "%SchemaDst%" mkdir "%SchemaDst%"
+    copy /y "%SchemaSrc%\*.toml" "%SchemaDst%" >nul
+    echo Installed usermsg schemas into %SchemaDst%
 )
 
 echo Installed: %PluginDst%
