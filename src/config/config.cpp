@@ -21,6 +21,15 @@ namespace
 		if (auto v = t[key].value<std::string_view>())
 			out.assign(*v);
 	}
+
+	// Accepts both a TOML boolean and the 0/1 style used by the older keys.
+	void SetBool(const toml::table& t, std::string_view key, bool& out)
+	{
+		if (auto v = t[key].value<bool>())
+			out = *v;
+		else if (auto v = t[key].value<int64_t>())
+			out = *v != 0;
+	}
 }
 
 static CliConfig g_config;
@@ -53,6 +62,7 @@ bool CliConfig::Load()
 	if (const toml::table* cli = tbl["cli"].as_table())
 	{
 		SetInt(*cli, "hide_window", hide_window);
+		SetBool(*cli, "block_input", block_input);
 		SetInt(*cli, "developer", developer);
 		SetInt(*cli, "capture", capture);
 		SetInt(*cli, "console", console);

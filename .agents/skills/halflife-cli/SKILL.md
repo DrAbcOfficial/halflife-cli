@@ -220,6 +220,7 @@ allowed_ips = ""
 
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
+block_input = false         # true = the game window ignores mouse/keyboard (CLI console unaffected)
 developer = 1
 console_topmost = 0         # 1 = keep the CLI console window always on top
 ```

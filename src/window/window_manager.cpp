@@ -48,12 +48,14 @@ namespace
 	}
 
 	int g_mode = -1;      // -1 = not configured yet
+	bool g_blockInput = false;
 	HWND g_hwnd = nullptr;
 	WINDOWPLACEMENT g_original = { sizeof(WINDOWPLACEMENT) };
 	bool g_savedOriginal = false;
+	int g_appliedBlock = -1;  // block state currently applied to g_hwnd (-1 = unknown)
 }
 
-namespace WindowHide
+namespace WindowManager
 {
 	void SetMode(int mode)
 	{
@@ -66,11 +68,23 @@ namespace WindowHide
 		return g_mode;
 	}
 
+	void SetBlockInput(bool block)
+	{
+		g_blockInput = block;
+		ApplyConfiguredMode();
+	}
+
+	bool GetBlockInput()
+	{
+		return g_blockInput;
+	}
+
+	// Runs every frame; cheap after the first pass. Re-asserts the hide mode
+	// and the input-block state because the engine can recreate the window
+	// on mode or video restarts.
 	void ApplyConfiguredMode()
 	{
-		if (g_mode < 0)
-			return;
-		if (g_mode == 0)
+		if (g_mode <= 0 && !g_blockInput)
 			return;
 
 		if (!IsWindow(g_hwnd))
@@ -78,6 +92,7 @@ namespace WindowHide
 			g_hwnd = FindGameWindow();
 			if (!g_hwnd)
 				return;
+			g_appliedBlock = -1;  // fresh window handle: re-assert the block state
 		}
 		if (!g_savedOriginal)
 		{
@@ -98,6 +113,14 @@ namespace WindowHide
 		{
 			ShowWindow(g_hwnd, SW_HIDE);
 		}
+
+		if ((g_blockInput ? 1 : 0) != g_appliedBlock)
+		{
+			// A disabled window ignores all mouse and keyboard input aimed at
+			// it; other windows (the CLI console) are unaffected.
+			EnableWindow(g_hwnd, g_blockInput ? FALSE : TRUE);
+			g_appliedBlock = g_blockInput ? 1 : 0;
+		}
 	}
 
 	void Restore()
@@ -105,9 +128,12 @@ namespace WindowHide
 		if (g_hwnd && IsWindow(g_hwnd))
 		{
 			ShowWindow(g_hwnd, SW_SHOW);
+			// Never leave the game window disabled after we are gone.
+			EnableWindow(g_hwnd, TRUE);
 			if (g_savedOriginal)
 				SetWindowPlacement(g_hwnd, &g_original);
 		}
 		g_hwnd = nullptr;
+		g_appliedBlock = -1;
 	}
 }

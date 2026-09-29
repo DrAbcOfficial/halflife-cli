@@ -95,8 +95,9 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	}
 	if (CLI_Config().hide_window)
 	{
-		WindowHide::SetMode(CLI_Config().hide_window);
+		WindowManager::SetMode(CLI_Config().hide_window);
 	}
+	WindowManager::SetBlockInput(CLI_Config().block_input);
 
 	if (CLI_Config().rcon)
 	{
@@ -133,7 +134,7 @@ void IPluginsV4::ExitGame(int iResult)
 {
 	RconServer::Shutdown();
 	ConsoleBridge::Shutdown();
-	WindowHide::Restore();
+	WindowManager::Restore();
 	UserMsgMonitor::Shutdown();
 }
 
@@ -162,7 +163,7 @@ int HUD_VidInit(void)
 
 void HUD_Frame(double time)
 {
-	WindowHide::ApplyConfiguredMode();
+	WindowManager::ApplyConfiguredMode();
 	ConsoleBridge::PumpCommands();
 	UserMsgMonitor::Frame();
 

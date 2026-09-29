@@ -12,6 +12,7 @@ struct CliConfig
 
 	// [cli]
 	int hide_window = 1;                      // 0 = off, 1 = move off-screen (default), 2 = ShowWindow(SW_HIDE)
+	bool block_input = false;                 // true = the game window ignores mouse/keyboard (the CLI console is a separate window)
 	int developer = 1;                        // set the "developer" cvar so verbose engine output flows
 	int capture = 1;                          // capture console output via VGUI2Extension GameConsole callbacks
 	int console = 1;                          // 1 = full bridge, 2 = no stdin thread, 3 = no output sink, 0 = off

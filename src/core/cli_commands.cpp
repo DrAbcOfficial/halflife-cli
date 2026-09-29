@@ -47,12 +47,14 @@ namespace
 	{
 		if (gEngfuncs.Cmd_Argc() < 2)
 		{
-			char buf[128];
-			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "cli.window mode = %d (0=show 1=offscreen 2=hide)", WindowHide::GetMode());
+			char buf[160];
+			_snprintf_s(buf, sizeof(buf), _TRUNCATE,
+				"cli.window mode = %d (0=show 1=offscreen 2=hide) block_input=%s",
+				WindowManager::GetMode(), WindowManager::GetBlockInput() ? "on" : "off");
 			ConsoleBridge::WriteOut(buf);
 			return;
 		}
-		WindowHide::SetMode(atoi(gEngfuncs.Cmd_Argv(1)));
+		WindowManager::SetMode(atoi(gEngfuncs.Cmd_Argv(1)));
 		ConsoleBridge::WriteOut("cli.window applied");
 	}
 
