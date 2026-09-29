@@ -173,10 +173,10 @@ allowed_ips = ""            # comma separated whitelist; empty = bind address on
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
 block_input = false         # true = the game window ignores mouse/keyboard (CLI console unaffected)
 developer = 1               # set the developer cvar at startup
-console_topmost = 0         # 1 = keep the CLI console window always on top
+console_topmost = false     # keep the CLI console window always on top
 
 [usermsg]
-enabled = 1                 # hook + decode server user messages
+enabled = true              # hook + decode server user messages
 file = ""                   # schema file; empty = "<gamedir>.toml" in configs/halflifecli/usermsgs/
 max_string = 64             # truncate decoded strings longer than this
 display_channels = "all"    # channels echoed to the console while recorded (comma separated; "all" = wildcard, empty = record only)

@@ -22,13 +22,18 @@ namespace
 			out.assign(*v);
 	}
 
-	// Accepts both a TOML boolean and the 0/1 style used by the older keys.
+	// Strict TOML boolean: only true/false. Anything else (e.g. 0/1) is
+	// reported and ignored, so the compiled-in default stands.
 	void SetBool(const toml::table& t, std::string_view key, bool& out)
 	{
-		if (auto v = t[key].value<bool>())
+		const toml::node* node = t[key].node();
+		if (!node)
+			return;
+		if (auto v = node->value<bool>())
 			out = *v;
-		else if (auto v = t[key].value<int64_t>())
-			out = *v != 0;
+		else
+			gEngfuncs.Con_Printf("halflife-cli: %s: \"%.*s\" must be true or false, ignoring\n",
+				kConfigPath, (int)key.size(), key.data());
 	}
 }
 
@@ -64,14 +69,14 @@ bool CliConfig::Load()
 		SetInt(*cli, "hide_window", hide_window);
 		SetBool(*cli, "block_input", block_input);
 		SetInt(*cli, "developer", developer);
-		SetInt(*cli, "capture", capture);
-		SetInt(*cli, "console", console);
-		SetInt(*cli, "console_topmost", console_topmost);
-		SetInt(*cli, "rcon", rcon);
+		SetBool(*cli, "capture", capture);
+		SetBool(*cli, "console", console);
+		SetBool(*cli, "console_topmost", console_topmost);
+		SetBool(*cli, "rcon", rcon);
 	}
 	if (const toml::table* usermsg = tbl["usermsg"].as_table())
 	{
-		SetInt(*usermsg, "enabled", usermsg_enabled);
+		SetBool(*usermsg, "enabled", usermsg_enabled);
 		SetString(*usermsg, "file", usermsg_file);
 		SetInt(*usermsg, "max_string", usermsg_max_string);
 		SetString(*usermsg, "display_channels", usermsg_display_channels);
