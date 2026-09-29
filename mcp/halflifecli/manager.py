@@ -258,11 +258,13 @@ class Manager:
             game_dir = self._game_dir_locked()
         return load_usermsg_schema(game_dir)
 
-    def usermsg_events(self, since_seq, limit, name):
+    def usermsg_events(self, since_seq, limit, name, channel=None):
         limit = min(max(int(limit or 50), 1), 200)
         cmd = "cli.usermsg events limit %d" % limit
         if since_seq is not None:
             cmd += " since %d" % max(int(since_seq), 0)
+        if channel:
+            cmd += " channel " + channel.strip().replace("\n", " ")
         if name:
             cmd += " name " + name.strip().replace("\n", " ")
         out = self.run_command(cmd)

@@ -57,9 +57,10 @@ INSTRUCTIONS = (
     "cvar/command names with find_cvar before running them. Call quit_game when "
     "done. Use run_command for everything else. "
     "The usermsg_* tools monitor server user messages: usermsg_events returns "
-    "decoded network traffic (page with since_seq=usermsg_events(...).newest_seq), "
-    "usermsg_messages shows the schema's message layouts, usermsg_status reports "
-    "hook health. User messages only flow while connected to a server."
+    "decoded network traffic (page with since_seq=usermsg_events(...).newest_seq, "
+    "filter by channel or name), usermsg_messages shows the schema's message "
+    "layouts, usermsg_status reports hook health. User messages only flow while "
+    "connected to a server."
 )
 
 manager = Manager()
@@ -153,9 +154,10 @@ def usermsg_events(
     since_seq: Annotated[int | None, Field(description="Return events with seq greater than this; omit for the newest page")] = None,
     limit: Annotated[int, Field(description="Maximum events per page", ge=1, le=200)] = 50,
     name: Annotated[str | None, Field(description="Only events of this message name (case-insensitive)")] = None,
+    channel: Annotated[str | None, Field(description="Only events of this channel (functional group: weapon, status, text, score, screen, world, hud, meta); omit for all channels")] = None,
 ) -> UserMsgEvents:
     """Read decoded user messages the game received; page forward with since_seq=newest_seq."""
-    return manager.usermsg_events(since_seq, limit, name)
+    return manager.usermsg_events(since_seq, limit, name, channel)
 
 
 @mcp.tool()

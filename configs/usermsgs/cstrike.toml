@@ -13,6 +13,7 @@ extends = "valve.toml"
 
 [[usermsg]]
 name = "SayText"
+channel = "text"
 note = "CS reads 4 extra format-parameter strings"
 fields = [
 	{ name = "client", type = "byte" },
@@ -25,6 +26,7 @@ fields = [
 
 [[usermsg]]
 name = "HudText"
+channel = "text"
 fields = [
 	{ name = "messageName", type = "string" },
 	{ name = "hintFlag", type = "byte", note = "!=0 = hint style" },
@@ -32,6 +34,7 @@ fields = [
 
 [[usermsg]]
 name = "HudTextPro"
+channel = "text"
 note = "HudText with the NewFont slot"
 fields = [
 	{ name = "messageName", type = "string" },
@@ -40,6 +43,7 @@ fields = [
 
 [[usermsg]]
 name = "HudTextArgs"
+channel = "text"
 fields = [
 	{ name = "messageName", type = "string" },
 	{ name = "hintFlag", type = "byte" },
@@ -49,6 +53,7 @@ fields = [
 
 [[usermsg]]
 name = "DeathMsg"
+channel = "score"
 fields = [
 	{ name = "killer", type = "byte" },
 	{ name = "victim", type = "byte" },
@@ -58,6 +63,7 @@ fields = [
 
 [[usermsg]]
 name = "TeamScore"
+channel = "score"
 fields = [
 	{ name = "teamName", type = "string" },
 	{ name = "score", type = "short" },
@@ -65,6 +71,7 @@ fields = [
 
 [[usermsg]]
 name = "TextMsg"
+channel = "text"
 note = "dest==5 (chat to a player) carries an extra index string first"
 fields = [
 	{ name = "dest", type = "byte" },
@@ -78,6 +85,7 @@ fields = [
 
 [[usermsg]]
 name = "StatusIcon"
+channel = "status"
 note = "status: 0=hide 1=show 2=flash"
 fields = [
 	{ name = "status", type = "byte" },
@@ -87,6 +95,7 @@ fields = [
 
 [[usermsg]]
 name = "Logo"
+channel = "world"
 note = "unused in HL; CS actually reads a byte"
 fields = [
 	{ name = "logoFlags", type = "byte" },
@@ -96,6 +105,7 @@ fields = [
 
 [[usermsg]]
 name = "Money"
+channel = "hud"
 fields = [
 	{ name = "dollars", type = "long" },
 	{ name = "deltaFlag", type = "byte", note = "!=0 = show change animation" },
@@ -103,6 +113,7 @@ fields = [
 
 [[usermsg]]
 name = "Account"
+channel = "score"
 note = "scoreboard balance"
 fields = [
 	{ name = "playerIndex", type = "byte", note = "1..64" },
@@ -111,12 +122,14 @@ fields = [
 
 [[usermsg]]
 name = "BlinkAcct"
+channel = "hud"
 fields = [
 	{ name = "blinkCount", type = "byte" },
 ]
 
 [[usermsg]]
 name = "HealthInfo"
+channel = "score"
 note = "scoreboard health"
 fields = [
 	{ name = "playerIndex", type = "byte" },
@@ -125,12 +138,14 @@ fields = [
 
 [[usermsg]]
 name = "ArmorType"
+channel = "status"
 fields = [
 	{ name = "armorType", type = "byte", note = "0=none 1=kevlar 2=kevlar+helmet" },
 ]
 
 [[usermsg]]
 name = "ScoreAttrib"
+channel = "score"
 fields = [
 	{ name = "playerIndex", type = "byte" },
 	{ name = "flags", type = "byte", note = "bit0=dead bit1=c4 bit2=vip bit3=defuser" },
@@ -138,12 +153,14 @@ fields = [
 
 [[usermsg]]
 name = "ItemStatus"
+channel = "status"
 fields = [
 	{ name = "bitmask", type = "byte", note = "bit0=nightvision bit1=defuser" },
 ]
 
 [[usermsg]]
 name = "Radar"
+channel = "hud"
 fields = [
 	{ name = "playerIndex", type = "byte" },
 	{ name = "origin", type = "vec3" },
@@ -151,6 +168,7 @@ fields = [
 
 [[usermsg]]
 name = "BombDrop"
+channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
 	{ name = "flag", type = "byte", note = "1=C4 planted, hide countdown" },
@@ -158,15 +176,18 @@ fields = [
 
 [[usermsg]]
 name = "BombPickup"
+channel = "world"
 fields = []
 
 [[usermsg]]
 name = "ADStop"
+channel = "screen"
 note = "stop spectator auto-director"
 fields = []
 
 [[usermsg]]
 name = "HostagePos"
+channel = "hud"
 fields = [
 	{ name = "show", type = "byte", note = "1=blink on radar" },
 	{ name = "index", type = "byte", note = "<=24" },
@@ -175,28 +196,33 @@ fields = [
 
 [[usermsg]]
 name = "HostageK"
+channel = "hud"
 fields = [
 	{ name = "index", type = "byte", note = "<=24" },
 ]
 
 [[usermsg]]
 name = "ShowTimer"
+channel = "hud"
 fields = []
 
 [[usermsg]]
 name = "RoundTime"
+channel = "hud"
 fields = [
 	{ name = "seconds", type = "short", note = "0=hide" },
 ]
 
 [[usermsg]]
 name = "BarTime"
+channel = "hud"
 fields = [
 	{ name = "duration", type = "short", note = "0=hide" },
 ]
 
 [[usermsg]]
 name = "BarTime2"
+channel = "hud"
 fields = [
 	{ name = "duration", type = "short" },
 	{ name = "elapsedPercent", type = "short" },
@@ -204,6 +230,7 @@ fields = [
 
 [[usermsg]]
 name = "Scenario"
+channel = "hud"
 fields = [
 	{ name = "show", type = "byte" },
 	{ name = "info", type = "group", when = { field = "show", ne = 0 }, fields = [
@@ -218,6 +245,7 @@ fields = [
 
 [[usermsg]]
 name = "TaskTime"
+channel = "hud"
 fields = [
 	{ name = "period", type = "short", note = "<-1 = task complete" },
 	{ name = "countdown", type = "byte" },
@@ -226,6 +254,7 @@ fields = [
 
 [[usermsg]]
 name = "ClCorpse"
+channel = "world"
 fields = [
 	{ name = "model", type = "string" },
 	{ name = "a", type = "long", note = "*1/128" },
@@ -241,6 +270,7 @@ fields = [
 
 [[usermsg]]
 name = "Brass"
+channel = "world"
 note = "cstrike variant; czero drops the first/last bytes"
 fields = [
 	{ name = "unused", type = "byte" },
@@ -256,6 +286,7 @@ fields = [
 
 [[usermsg]]
 name = "Fog"
+channel = "screen"
 fields = [
 	{ name = "r", type = "byte" },
 	{ name = "g", type = "byte" },
@@ -266,18 +297,21 @@ fields = [
 
 [[usermsg]]
 name = "ReceiveW"
+channel = "world"
 fields = [
 	{ name = "weatherType", type = "byte" },
 ]
 
 [[usermsg]]
 name = "NVGToggle"
+channel = "status"
 fields = [
 	{ name = "on", type = "byte" },
 ]
 
 [[usermsg]]
 name = "ReloadSound"
+channel = "weapon"
 fields = [
 	{ name = "volume", type = "byte", note = "/255" },
 	{ name = "weaponType", type = "byte", note = "0=shotgun reload" },
@@ -285,6 +319,7 @@ fields = [
 
 [[usermsg]]
 name = "Crosshair"
+channel = "weapon"
 note = "spectator crosshair"
 fields = [
 	{ name = "state", type = "byte" },
@@ -292,18 +327,21 @@ fields = [
 
 [[usermsg]]
 name = "ShadowIdx"
+channel = "screen"
 fields = [
 	{ name = "spriteIndex", type = "long" },
 ]
 
 [[usermsg]]
 name = "SpecHealth"
+channel = "status"
 fields = [
 	{ name = "health", type = "byte" },
 ]
 
 [[usermsg]]
 name = "SpecHealth2"
+channel = "status"
 fields = [
 	{ name = "health", type = "byte" },
 	{ name = "playerIndex", type = "byte" },
@@ -311,6 +349,7 @@ fields = [
 
 [[usermsg]]
 name = "ForceCam"
+channel = "screen"
 fields = [
 	{ name = "forceCamera", type = "byte" },
 	{ name = "forceChaseCam", type = "byte" },
@@ -319,6 +358,7 @@ fields = [
 
 [[usermsg]]
 name = "Location"
+channel = "score"
 fields = [
 	{ name = "playerIndex", type = "byte", note = "1..64" },
 	{ name = "location", type = "string", note = "<=31 chars" },
@@ -326,6 +366,7 @@ fields = [
 
 [[usermsg]]
 name = "HLTV"
+channel = "score"
 fields = [
 	{ name = "playerIndex", type = "byte", note = "0=broadcast to all" },
 	{ name = "data", type = "byte", note = "bit7: 1=health(data&0x7F) 0=FOV" },
@@ -333,6 +374,7 @@ fields = [
 
 [[usermsg]]
 name = "SendAudio"
+channel = "meta"
 fields = [
 	{ name = "sender", type = "byte" },
 	{ name = "sound", type = "string" },
@@ -341,6 +383,7 @@ fields = [
 
 [[usermsg]]
 name = "TutorText"
+channel = "text"
 fields = [
 	{ name = "token", type = "string" },
 	{ name = "numArgs", type = "byte" },
@@ -352,12 +395,14 @@ fields = [
 
 [[usermsg]]
 name = "TutorState"
+channel = "text"
 fields = [
 	{ name = "token", type = "string" },
 ]
 
 [[usermsg]]
 name = "TutorLine"
+channel = "text"
 fields = [
 	{ name = "entIndex", type = "short" },
 	{ name = "id", type = "short" },
@@ -365,10 +410,12 @@ fields = [
 
 [[usermsg]]
 name = "TutorClose"
+channel = "text"
 fields = []
 
 [[usermsg]]
 name = "BotVoice"
+channel = "meta"
 fields = [
 	{ name = "status", type = "byte" },
 	{ name = "entIndex", type = "byte" },
@@ -376,6 +423,7 @@ fields = [
 
 [[usermsg]]
 name = "BotProgress"
+channel = "meta"
 fields = [
 	{ name = "cmd", type = "byte" },
 	{ name = "progressInfo", type = "group", when = { field = "cmd", eq = 0 }, fields = [
@@ -387,6 +435,7 @@ fields = [
 
 [[usermsg]]
 name = "CZCareerHUD"
+channel = "hud"
 fields = [
 	{ name = "type", type = "string", note = "MATCH|ROUND" },
 	{ name = "ctWins", type = "long" },
@@ -398,12 +447,14 @@ fields = [
 
 [[usermsg]]
 name = "BuyClose"
+channel = "hud"
 fields = []
 
 # ------------------------------------------- engine-built-in (same dispatch)
 
 [[usermsg]]
 name = "ScreenShake"
+channel = "screen"
 note = "engine-handled (not via the game DLL)"
 fields = [
 	{ name = "amplitude", type = "short" },
@@ -413,6 +464,7 @@ fields = [
 
 [[usermsg]]
 name = "ScreenFade"
+channel = "screen"
 note = "engine-handled (not via the game DLL)"
 fields = [
 	{ name = "duration", type = "short" },

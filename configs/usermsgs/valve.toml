@@ -8,7 +8,13 @@
 # Schema syntax:
 #   [primitives] coord_size = 2|4     bytes of "coord" (2: short/8, 4: long/8)
 #   extends = "other.toml"            inherit a base file (child overrides by name)
-#   [[usermsg]]                       one message: name, note, raw, fields
+#   [[usermsg]]                       one message: name, channel, note, raw, fields
+#   channel                           functional group for the plugin's event ring
+#                                     and [usermsg] display_channels (weapon,
+#                                     status, text, score, screen, world, hud,
+#                                     meta; default "usermsg"; "all" is reserved
+#                                     as the query/display wildcard). An override
+#                                     that omits channel inherits the base's.
 #   fields: name/type/count/when/fields/note
 #     type   byte|char|short|word|long|float|coord|angle|angle16|string|vec3|group
 #     count  N | "<field name>" | "*"   (repeat; * = until the buffer runs out)
@@ -20,6 +26,7 @@ coord_size = 2    # READ_COORD = short * 1/8 on the byte-aligned usermsg stream
 
 [[usermsg]]
 name = "AmmoX"
+channel = "weapon"
 fields = [
 	{ name = "index", type = "byte" },
 	{ name = "count", type = "byte" },
@@ -27,6 +34,7 @@ fields = [
 
 [[usermsg]]
 name = "AmmoPickup"
+channel = "weapon"
 fields = [
 	{ name = "index", type = "byte" },
 	{ name = "count", type = "byte" },
@@ -34,24 +42,28 @@ fields = [
 
 [[usermsg]]
 name = "WeapPickup"
+channel = "weapon"
 fields = [
 	{ name = "index", type = "byte" },
 ]
 
 [[usermsg]]
 name = "ItemPickup"
+channel = "weapon"
 fields = [
 	{ name = "itemName", type = "string" },
 ]
 
 [[usermsg]]
 name = "HideWeapon"
+channel = "weapon"
 fields = [
 	{ name = "hideBits", type = "byte" },
 ]
 
 [[usermsg]]
 name = "CurWeapon"
+channel = "weapon"
 fields = [
 	{ name = "state", type = "byte", note = "0=holster 1=active 2=active+autofire" },
 	{ name = "weaponId", type = "char" },
@@ -60,6 +72,7 @@ fields = [
 
 [[usermsg]]
 name = "WeaponList"
+channel = "weapon"
 fields = [
 	{ name = "name", type = "string" },
 	{ name = "ammo1Type", type = "char", note = "-1=none" },
@@ -74,6 +87,7 @@ fields = [
 
 [[usermsg]]
 name = "SecAmmoVal"
+channel = "weapon"
 fields = [
 	{ name = "slot", type = "byte", note = "<4" },
 	{ name = "amount", type = "byte" },
@@ -81,30 +95,35 @@ fields = [
 
 [[usermsg]]
 name = "SecAmmoIcon"
+channel = "weapon"
 fields = [
 	{ name = "spriteName", type = "string" },
 ]
 
 [[usermsg]]
 name = "SetFOV"
+channel = "weapon"
 fields = [
 	{ name = "fov", type = "byte", note = "0=default_fov" },
 ]
 
 [[usermsg]]
 name = "Geiger"
+channel = "status"
 fields = [
 	{ name = "range", type = "byte", note = "*4 when used" },
 ]
 
 [[usermsg]]
 name = "FlashBat"
+channel = "status"
 fields = [
 	{ name = "battery", type = "byte", note = "/100" },
 ]
 
 [[usermsg]]
 name = "Flashlight"
+channel = "status"
 fields = [
 	{ name = "on", type = "byte" },
 	{ name = "battery", type = "byte", note = "/100" },
@@ -112,18 +131,21 @@ fields = [
 
 [[usermsg]]
 name = "Battery"
+channel = "status"
 fields = [
 	{ name = "armor", type = "short" },
 ]
 
 [[usermsg]]
 name = "Health"
+channel = "status"
 fields = [
 	{ name = "health", type = "byte" },
 ]
 
 [[usermsg]]
 name = "Damage"
+channel = "status"
 note = "damage direction indicator"
 fields = [
 	{ name = "armor", type = "byte" },
@@ -134,6 +156,7 @@ fields = [
 
 [[usermsg]]
 name = "DeathMsg"
+channel = "score"
 fields = [
 	{ name = "killer", type = "byte" },
 	{ name = "victim", type = "byte" },
@@ -142,6 +165,7 @@ fields = [
 
 [[usermsg]]
 name = "SayText"
+channel = "text"
 fields = [
 	{ name = "client", type = "byte" },
 	{ name = "text", type = "string" },
@@ -149,6 +173,7 @@ fields = [
 
 [[usermsg]]
 name = "TextMsg"
+channel = "text"
 fields = [
 	{ name = "dest", type = "byte", note = "1|2=console 3=chat 4=center" },
 	{ name = "param1", type = "string" },
@@ -160,22 +185,26 @@ fields = [
 
 [[usermsg]]
 name = "HudText"
+channel = "text"
 fields = [
 	{ name = "messageName", type = "string" },
 ]
 
 [[usermsg]]
 name = "GameTitle"
+channel = "text"
 fields = []
 
 [[usermsg]]
 name = "Train"
+channel = "hud"
 fields = [
 	{ name = "pos", type = "byte", note = "0=hide" },
 ]
 
 [[usermsg]]
 name = "StatusIcon"
+channel = "status"
 fields = [
 	{ name = "enable", type = "byte" },
 	{ name = "icon", type = "string" },
@@ -184,6 +213,7 @@ fields = [
 
 [[usermsg]]
 name = "StatusText"
+channel = "status"
 fields = [
 	{ name = "line", type = "byte", note = "<4" },
 	{ name = "text", type = "string" },
@@ -191,6 +221,7 @@ fields = [
 
 [[usermsg]]
 name = "StatusValue"
+channel = "status"
 fields = [
 	{ name = "index", type = "byte", note = "1..8" },
 	{ name = "value", type = "short" },
@@ -198,6 +229,7 @@ fields = [
 
 [[usermsg]]
 name = "ShowMenu"
+channel = "hud"
 fields = [
 	{ name = "validSlots", type = "short" },
 	{ name = "displayTime", type = "char", note = "0=forever" },
@@ -207,6 +239,7 @@ fields = [
 
 [[usermsg]]
 name = "MOTD"
+channel = "text"
 fields = [
 	{ name = "isLast", type = "byte" },
 	{ name = "chunk", type = "string" },
@@ -214,12 +247,14 @@ fields = [
 
 [[usermsg]]
 name = "ServerName"
+channel = "score"
 fields = [
 	{ name = "name", type = "string" },
 ]
 
 [[usermsg]]
 name = "ScoreInfo"
+channel = "score"
 fields = [
 	{ name = "playerIndex", type = "byte" },
 	{ name = "frags", type = "short" },
@@ -230,6 +265,7 @@ fields = [
 
 [[usermsg]]
 name = "TeamInfo"
+channel = "score"
 fields = [
 	{ name = "playerIndex", type = "byte", note = "1..64" },
 	{ name = "teamName", type = "string" },
@@ -237,6 +273,7 @@ fields = [
 
 [[usermsg]]
 name = "TeamNames"
+channel = "score"
 fields = [
 	{ name = "numTeams", type = "byte" },
 	{ name = "teamName", type = "string", count = "numTeams" },
@@ -244,6 +281,7 @@ fields = [
 
 [[usermsg]]
 name = "TeamScore"
+channel = "score"
 fields = [
 	{ name = "teamName", type = "string" },
 	{ name = "frags", type = "short" },
@@ -252,6 +290,7 @@ fields = [
 
 [[usermsg]]
 name = "Spectator"
+channel = "score"
 fields = [
 	{ name = "playerIndex", type = "byte", note = "1..64" },
 	{ name = "isSpectator", type = "byte" },
@@ -259,12 +298,14 @@ fields = [
 
 [[usermsg]]
 name = "AllowSpec"
+channel = "score"
 fields = [
 	{ name = "allow", type = "byte" },
 ]
 
 [[usermsg]]
 name = "ValClass"
+channel = "score"
 note = "valid classes; shorts until the buffer runs out"
 fields = [
 	{ name = "classes", type = "short", count = "*" },
@@ -272,30 +313,35 @@ fields = [
 
 [[usermsg]]
 name = "Feign"
+channel = "status"
 fields = [
 	{ name = "state", type = "byte" },
 ]
 
 [[usermsg]]
 name = "Detpack"
+channel = "weapon"
 fields = [
 	{ name = "state", type = "byte" },
 ]
 
 [[usermsg]]
 name = "BuildSt"
+channel = "weapon"
 fields = [
 	{ name = "state", type = "short" },
 ]
 
 [[usermsg]]
 name = "RandomPC"
+channel = "score"
 fields = [
 	{ name = "state", type = "byte" },
 ]
 
 [[usermsg]]
 name = "VGUIMenu"
+channel = "hud"
 fields = [
 	{ name = "menuID", type = "byte" },
 	{ name = "mapName", type = "string", when = { field = "menuID", eq = 4 } },
@@ -303,38 +349,46 @@ fields = [
 
 [[usermsg]]
 name = "InitHUD"
+channel = "hud"
 fields = []
 
 [[usermsg]]
 name = "ResetHUD"
+channel = "hud"
 fields = []
 
 [[usermsg]]
 name = "GameMode"
+channel = "meta"
 fields = [
 	{ name = "teamplay", type = "byte" },
 ]
 
 [[usermsg]]
 name = "ViewMode"
+channel = "screen"
 fields = []
 
 [[usermsg]]
 name = "Concuss"
+channel = "status"
 fields = [
 	{ name = "state", type = "byte" },
 ]
 
 [[usermsg]]
 name = "ResetFade"
+channel = "screen"
 fields = []
 
 [[usermsg]]
 name = "SpecFade"
+channel = "screen"
 fields = []
 
 [[usermsg]]
 name = "VoiceMask"
+channel = "meta"
 note = "engine voice system"
 fields = [
 	{ name = "audiblePlayers", type = "long" },
@@ -344,5 +398,6 @@ fields = [
 
 [[usermsg]]
 name = "ReqState"
+channel = "meta"
 note = "HLTV spectating state request"
 fields = []

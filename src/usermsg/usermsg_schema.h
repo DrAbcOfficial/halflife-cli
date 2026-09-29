@@ -30,6 +30,7 @@ struct UserMsgField
 struct UserMsgDef
 {
 	std::string name;
+	std::string channel;       // event-ring channel (functional group); see UserMsgSchema::Load
 	std::vector<UserMsgField> fields;
 	bool raw = false;          // print size + hex dump instead of parsing fields
 	std::string note;
@@ -37,13 +38,20 @@ struct UserMsgDef
 
 struct UserMsgSchema
 {
+	// Channel a message lands in when its definition (and any inherited base)
+	// does not name one.
+	static constexpr const char* kDefaultChannel = "usermsg";
+
 	int coord_size = 2;        // bytes of "coord": 2 = short*1/8 (hl, cstrike), 4 = long*1/8 (svencoop)
 	std::vector<UserMsgDef> messages;
 	std::map<std::string, size_t> index;  // lowercased name -> position in messages
 
 	// Loads "<mod>/metahook/configs/usermsgs/<file>", following "extends"
-	// chains (a child message replaces the same-name base message). Returns
-	// false when the root file is missing or unparsable; details are printed
-	// through Con_Printf.
+	// chains (a child message replaces the same-name base message). Every
+	// message carries the functional group named by its optional "channel"
+	// key; an override without one inherits the base's, and whatever is left
+	// empty falls back to kDefaultChannel.
+	// Returns false when the root file is missing or unparsable; details are
+	// printed through Con_Printf.
 	bool Load(const std::string& file);
 };

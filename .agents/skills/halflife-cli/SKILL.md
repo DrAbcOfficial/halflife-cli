@@ -102,11 +102,13 @@ expose no `read_console` stream).
 While connected to a server, the plugin decodes every server user message per
 a TOML schema (one file per `-game` folder in
 `svencoop\metahook\configs\usermsgs\`, maintained in the repo at
-`configs/usermsgs/`) and records the last 512 into a channel-keyed event
-ring (the whole usermsg stream is the single "usermsg" channel for now).
-Watch traffic with `usermsg_events(since_seq=..., name=...)` (page forward
-with `since_seq=<previous>.newest_seq`) or, without MCP, `cli.usermsg events
-[channel C] [since N] [limit N] [name X]` over RCON/stdin; `cli.usermsg`
+`configs/usermsgs/`) and records the last 512 per channel into a
+channel-keyed event ring. A message's channel is its functional group from
+the schema's `channel` key (weapon, status, text, score, screen, world, hud,
+meta; untagged ones land in "usermsg"). Watch traffic with
+`usermsg_events(since_seq=..., name=..., channel=...)` (page forward with
+`since_seq=<previous>.newest_seq`) or, without MCP, `cli.usermsg events
+[channel C|all] [since N] [limit N] [name X]` over RCON/stdin; `cli.usermsg`
 reports hook
 health (wrapped = intercepted the game DLL's hook, self-registered =
 display-only entry for messages the game DLL never hooks). Messages only flow

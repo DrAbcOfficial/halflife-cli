@@ -1,18 +1,20 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <functional>
 #include <map>
 #include <string>
 #include <utility>
+#include <vector>
 
 // Named ring buffers of one-line records ("channels"), keyed by string, that
 // back the cli.* query paths. Sequence numbers come from one counter shared
 // by all channels, so they stay ordered and comparable across channels while
-// each channel independently keeps only its newest entries. The whole
-// user-message stream is the single "usermsg" channel for now; future
-// recorders can add their own channels without new storage or query plumbing.
+// each channel independently keeps only its newest entries. Channels are
+// functional groups (weapon, status, text, ...), assigned per message by the
+// schema's "channel" key.
 //
 // Not thread-safe: the monitor calls it from the engine thread only.
 class EventLog
@@ -54,6 +56,26 @@ public:
 			if (e.seq > since)
 				visit(e.seq, e.line);
 		}
+	}
+
+	// Same as ForEach, but across ALL channels, merged oldest-first
+	// (sequence numbers are globally monotonic).
+	void ForEachAll(uint64_t since,
+		const std::function<void(uint64_t seq, const std::string& line)>& visit) const
+	{
+		std::vector<const Event*> matched;
+		for (const auto& entry : channels_)
+		{
+			for (const Event& e : entry.second)
+			{
+				if (e.seq > since)
+					matched.push_back(&e);
+			}
+		}
+		std::sort(matched.begin(), matched.end(),
+			[](const Event* a, const Event* b) { return a->seq < b->seq; });
+		for (const Event* e : matched)
+			visit(e->seq, e->line);
 	}
 
 	void Clear()

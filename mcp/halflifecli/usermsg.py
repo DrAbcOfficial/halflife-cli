@@ -29,6 +29,9 @@ USERMSG_EVENTS_NEWEST_RE = re.compile(
     r"cli\.usermsg: events channel=(\S+) newest=(\d+) name=(.*)$", re.MULTILINE)
 USERMSG_EVENTS_MORE_RE = re.compile(r"cli\.usermsg: (\d+) more after #\d+", re.MULTILINE)
 
+# Channel for schema messages (here or in an inherited base) without one.
+USERMSG_DEFAULT_CHANNEL = "usermsg"
+
 
 def parse_usermsg_status(text):
     """UserMsgStatus from `cli.usermsg` output, or None when unrecognized."""
@@ -72,6 +75,10 @@ def load_usermsg_schema(game_dir):
 
     Reads the same files the plugin loads (mod/metahook/configs/usermsgs/);
     base files load first so the child's definitions win, like the plugin.
+    Every merged message carries the "channel" functional group of its
+    definition; an override without one inherits the base's, and anything
+    left unnamed defaults to "usermsg" (mirroring src/usermsg/
+    usermsg_schema.cpp).
     Raises ToolError when the schema file is missing or unparsable.
     """
     schema_dir = usermsg_schema_dir(game_dir)
@@ -101,7 +108,10 @@ def load_usermsg_schema(game_dir):
             load_file(parent)  # base definitions first, child overrides below
         for msg in data.get("usermsg", []):
             if isinstance(msg, dict) and msg.get("name"):
-                merged[msg["name"]] = msg
+                prev = merged.get(msg["name"])
+                channel = msg.get("channel") or (prev or {}).get("channel") \
+                    or USERMSG_DEFAULT_CHANNEL
+                merged[msg["name"]] = {**msg, "channel": channel}
         coord_size = data.get("primitives", {}).get("coord_size", coord_size)
         return parent
 

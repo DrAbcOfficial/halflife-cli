@@ -17,9 +17,9 @@
 #include <vector>
 
 // Hooks the user-message entries the client game DLL registers with the
-// engine, decodes payloads via UserMsgDecoder, records every message in the
-// channel-keyed EventLog (the whole stream is one "usermsg" channel), and
-// answers the "cli.usermsg" console command.
+// engine, decodes payloads via UserMsgDecoder, records every message into its
+// schema-assigned EventLog channel (functional group), and answers the
+// "cli.usermsg" console command.
 
 namespace
 {
@@ -34,13 +34,12 @@ namespace
 	// bytes and other console output rides along, so stop well before that.
 	constexpr size_t kReplyByteBudget = 3300;
 
-	// Channel every decoded user-message line is recorded under; future
-	// recorders can split this into per-message channels without touching
-	// the EventLog or the query plumbing.
-	constexpr const char* kUsermsgChannel = "usermsg";
+	// Wildcard channel: "display_channels = all" echoes every channel, and
+	// "cli.usermsg events channel all" (the default) reads the merged ring.
+	constexpr const char* kAllChannels = "all";
 
 	EventLog g_eventLog(512);       // per-channel ring capacity
-	std::set<std::string> g_displayChannels = { kUsermsgChannel };
+	std::set<std::string> g_displayChannels;
 	UserMsgSchema g_schema;
 	std::string g_schemaFile;
 	std::vector<HookEntry> g_entries;
@@ -131,8 +130,8 @@ namespace
 	void HandleMessage(const UserMsgDef& def, int iSize, void* pbuf)
 	{
 		std::string line = UserMsgDecoder::Format(g_schema, def, iSize, pbuf, g_maxString);
-		g_eventLog.Record(kUsermsgChannel, line);
-		if (g_display && g_displayChannels.count(kUsermsgChannel))
+		g_eventLog.Record(def.channel.c_str(), line);
+		if (g_display && (g_displayChannels.count(kAllChannels) || g_displayChannels.count(def.channel)))
 			gEngfuncs.Con_Printf("%s\n", line.c_str());
 	}
 
@@ -318,7 +317,7 @@ namespace UserMsgMonitor
 		bool haveSince = false;
 		size_t limit = 20;
 		const char* nameFilter = "";
-		std::string channel = kUsermsgChannel;
+		std::string channel = kAllChannels;
 
 		for (int i = 2; i + 1 < gEngfuncs.Cmd_Argc(); i += 2)
 		{
@@ -351,7 +350,7 @@ namespace UserMsgMonitor
 		size_t shown = 0, more = 0;
 		size_t bytes = 0;
 		uint64_t lastShown = 0;
-		g_eventLog.ForEach(channel, since, [&](uint64_t seq, const std::string& line)
+		auto visit = [&](uint64_t seq, const std::string& line)
 		{
 			if (!EventNameMatches(line, nameFilter))
 				return;
@@ -373,7 +372,11 @@ namespace UserMsgMonitor
 			gEngfuncs.Con_Printf("%s\n", out.c_str());
 			++shown;
 			lastShown = seq;
-		});
+		};
+		if (!_stricmp(channel.c_str(), kAllChannels))
+			g_eventLog.ForEachAll(since, visit);
+		else
+			g_eventLog.ForEach(channel, since, visit);
 		if (!shown)
 			gEngfuncs.Con_Printf("cli.usermsg: no matching events\n");
 		else if (more)
@@ -391,6 +394,9 @@ namespace UserMsgMonitor
 		{
 			std::string line = !e.known ? "pending " : (e.original ? "wrapped " : "self    ");
 			line += e.def->name;
+			line += " [";
+			line += e.def->channel;
+			line += ']';
 			if (e.def->raw)
 				line += " (raw)";
 			else
@@ -473,8 +479,9 @@ namespace UserMsgMonitor
 				return;
 			}
 			const UserMsgDef& def = *e->def;
-			char b[96];
-			_snprintf_s(b, sizeof(b), _TRUNCATE, "cli.usermsg: %s%s hooks=%s%s%s\n", def.name.c_str(),
+			char b[128];
+			_snprintf_s(b, sizeof(b), _TRUNCATE, "cli.usermsg: %s [%s]%s hooks=%s%s%s\n", def.name.c_str(),
+				def.channel.c_str(),
 				def.raw ? " (raw)" : "",
 				!e->known ? "pending" : (e->original ? "wrapped" : "self-registered"),
 				def.note.empty() ? "" : " - ", def.note.c_str());

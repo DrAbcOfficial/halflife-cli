@@ -22,9 +22,11 @@ struct CliConfig
 	int usermsg_enabled = 1;                  // hook + decode server user messages (metahook/configs/usermsgs/)
 	std::string usermsg_file;                 // schema file name; empty = "<gamedir>.toml"
 	int usermsg_max_string = 64;              // truncate decoded strings longer than this
-	// Channels (comma separated) echoed to the console while recorded; empty
-	// = record only. The whole usermsg stream is the "usermsg" channel.
-	std::string usermsg_display_channels = "usermsg";
+	// Channels (comma separated) echoed to the console while recorded;
+	// "all" is the wildcard, empty = record only. Channels are the schema's
+	// functional groups (weapon, status, text, score, screen, world, hud,
+	// meta, or the default "usermsg").
+	std::string usermsg_display_channels = "all";
 
 	bool Load();
 };

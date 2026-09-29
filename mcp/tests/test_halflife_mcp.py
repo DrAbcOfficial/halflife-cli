@@ -206,7 +206,7 @@ class TestUserMsgParsers(unittest.TestCase):
             f.write(b"[rcon]\npassword = \"x\"\n")
         with open(os.path.join(schemas, "valve.toml"), "wb") as f:
             f.write(b"[primitives]\ncoord_size = 2\n\n"
-                    b"[[usermsg]]\nname = \"Health\"\n"
+                    b"[[usermsg]]\nname = \"Health\"\nchannel = \"status\"\n"
                     b"fields = [ { name = \"health\", type = \"byte\" } ]\n\n"
                     b"[[usermsg]]\nname = \"ScoreInfo\"\nfields = []\n")
         with open(os.path.join(schemas, "svencoop.toml"), "wb") as f:
@@ -227,6 +227,9 @@ class TestUserMsgParsers(unittest.TestCase):
             self.assertIn("SvenOnly", names)
             health = next(m for m in schema.messages if m["name"] == "Health")
             self.assertEqual(health["fields"][0]["type"], "long")  # overridden
+            self.assertEqual(health["channel"], "status")  # inherited from the base
+            sven_only = next(m for m in schema.messages if m["name"] == "SvenOnly")
+            self.assertEqual(sven_only["channel"], "usermsg")  # default channel
 
     def test_load_schema_missing(self):
         with tempfile.TemporaryDirectory() as d:

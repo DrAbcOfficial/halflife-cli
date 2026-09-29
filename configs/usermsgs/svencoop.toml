@@ -19,6 +19,7 @@ coord_size = 4    # READ_COORD = long * 1/8 (svencoop usermsg-layer convention)
 
 [[usermsg]]
 name = "CurWeapon"
+channel = "weapon"
 note = "10257: weapon id and clip widened"
 fields = [
 	{ name = "state", type = "byte" },
@@ -29,12 +30,14 @@ fields = [
 
 [[usermsg]]
 name = "Health"
+channel = "status"
 fields = [
 	{ name = "health", type = "long" },
 ]
 
 [[usermsg]]
 name = "WeaponList"
+channel = "weapon"
 note = "ammo types/max widened to long, slot to short"
 fields = [
 	{ name = "name", type = "string" },
@@ -50,6 +53,7 @@ fields = [
 
 [[usermsg]]
 name = "ScoreInfo"
+channel = "score"
 note = "10257 layout (20 bytes); field semantics past frags not fully identified"
 fields = [
 	{ name = "playerIndex", type = "byte" },
@@ -64,6 +68,7 @@ fields = [
 
 [[usermsg]]
 name = "AmmoPickup"
+channel = "weapon"
 fields = [
 	{ name = "index", type = "byte" },
 	{ name = "count", type = "long" },
@@ -71,12 +76,14 @@ fields = [
 
 [[usermsg]]
 name = "WeapPickup"
+channel = "weapon"
 fields = [
 	{ name = "index", type = "short" },
 ]
 
 [[usermsg]]
 name = "AmmoX"
+channel = "weapon"
 fields = [
 	{ name = "index", type = "byte" },
 	{ name = "count", type = "long" },
@@ -84,6 +91,7 @@ fields = [
 
 [[usermsg]]
 name = "HideHUD"
+channel = "weapon"
 note = "renamed HideWeapon; widened to short in 10257"
 fields = [
 	{ name = "hideBits", type = "short" },
@@ -91,6 +99,7 @@ fields = [
 
 [[usermsg]]
 name = "TeamNames"
+channel = "score"
 note = "each team also carries a vector"
 fields = [
 	{ name = "numTeams", type = "byte" },
@@ -102,6 +111,7 @@ fields = [
 
 [[usermsg]]
 name = "Concuss"
+channel = "status"
 fields = [
 	{ name = "v1", type = "float" },
 	{ name = "v2", type = "float" },
@@ -110,12 +120,14 @@ fields = [
 
 [[usermsg]]
 name = "ViewMode"
+channel = "screen"
 fields = [
 	{ name = "mode", type = "byte" },
 ]
 
 [[usermsg]]
 name = "VoiceMask"
+channel = "meta"
 note = "svencoop registers 8 bytes (no mod-enable byte)"
 fields = [
 	{ name = "audiblePlayers", type = "long" },
@@ -126,6 +138,7 @@ fields = [
 
 [[usermsg]]
 name = "CustWeapon"
+channel = "weapon"
 fields = [
 	{ name = "weaponId", type = "short" },
 	{ name = "name", type = "string" },
@@ -133,24 +146,28 @@ fields = [
 
 [[usermsg]]
 name = "CdAudio"
+channel = "meta"
 fields = [
 	{ name = "track", type = "byte" },
 ]
 
 [[usermsg]]
 name = "Speaksent"
+channel = "meta"
 fields = [
 	{ name = "speaker", type = "string" },
 ]
 
 [[usermsg]]
 name = "TimeEnd"
+channel = "hud"
 fields = [
 	{ name = "seconds", type = "long" },
 ]
 
 [[usermsg]]
 name = "MapList"
+channel = "meta"
 note = "wire-verified on 10257: kind 0 = first page (total + map names), kind 1 = further pages (current, total, names), kind 0x7B ends"
 fields = [
 	{ name = "kind", type = "byte" },
@@ -167,16 +184,19 @@ fields = [
 
 [[usermsg]]
 name = "CbElec"
+channel = "meta"
 fields = [
 	{ name = "state", type = "byte" },
 ]
 
 [[usermsg]]
 name = "EndVote"
+channel = "meta"
 fields = []
 
 [[usermsg]]
 name = "VoteMenu"
+channel = "meta"
 note = "question byte + up to 4 option strings"
 fields = [
 	{ name = "question", type = "byte" },
@@ -188,18 +208,21 @@ fields = [
 
 [[usermsg]]
 name = "NextMap"
+channel = "meta"
 fields = [
 	{ name = "mapName", type = "string" },
 ]
 
 [[usermsg]]
 name = "ToxicCloud"
+channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
 ]
 
 [[usermsg]]
 name = "ShkFlash"
+channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
 	{ name = "b", type = "byte" },
@@ -207,6 +230,7 @@ fields = [
 
 [[usermsg]]
 name = "CreateBlood"
+channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
 	{ name = "b1", type = "byte" },
@@ -215,6 +239,7 @@ fields = [
 
 [[usermsg]]
 name = "GargSplash"
+channel = "world"
 note = "server registers 12 bytes but sends 24; the client read order is authoritative"
 fields = [
 	{ name = "origin", type = "vec3" },
@@ -223,6 +248,7 @@ fields = [
 
 [[usermsg]]
 name = "SporeTrail"
+channel = "world"
 fields = [
 	{ name = "v1", type = "short" },
 	{ name = "b", type = "byte" },
@@ -230,6 +256,7 @@ fields = [
 
 [[usermsg]]
 name = "TracerDecal"
+channel = "world"
 fields = [
 	{ name = "start", type = "vec3" },
 	{ name = "end", type = "vec3" },
@@ -239,6 +266,7 @@ fields = [
 
 [[usermsg]]
 name = "SRDetonate"
+channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
 	{ name = "b", type = "byte" },
@@ -246,6 +274,7 @@ fields = [
 
 [[usermsg]]
 name = "SRPrimed"
+channel = "world"
 fields = [
 	{ name = "b", type = "byte" },
 	{ name = "f", type = "float" },
@@ -253,36 +282,42 @@ fields = [
 
 [[usermsg]]
 name = "SRPrimedOff"
+channel = "world"
 fields = [
 	{ name = "b", type = "byte" },
 ]
 
 [[usermsg]]
 name = "ShieldRic"
+channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
 ]
 
 [[usermsg]]
 name = "Playlist"
+channel = "meta"
 fields = [
 	{ name = "name", type = "string" },
 ]
 
 [[usermsg]]
 name = "ServerVer"
+channel = "meta"
 fields = [
 	{ name = "version", type = "string" },
 ]
 
 [[usermsg]]
 name = "ServerBuild"
+channel = "meta"
 fields = [
 	{ name = "build", type = "string" },
 ]
 
 [[usermsg]]
 name = "WeatherFX"
+channel = "world"
 note = "68-byte fixed layout"
 fields = [
 	{ name = "type", type = "short" },
@@ -309,6 +344,7 @@ fields = [
 
 [[usermsg]]
 name = "CameraMouse"
+channel = "screen"
 fields = [
 	{ name = "mode", type = "byte" },
 	{ name = "arg", type = "string", when = { field = "mode", eq = 2 } },
@@ -316,6 +352,7 @@ fields = [
 
 [[usermsg]]
 name = "Fog"
+channel = "screen"
 fields = [
 	{ name = "v1", type = "short" },
 	{ name = "b1", type = "byte" },
@@ -330,6 +367,7 @@ fields = [
 
 [[usermsg]]
 name = "PrtlUpdt"
+channel = "world"
 note = "10257 expanded layout (75-byte union); linear read order listed by the RE docs"
 fields = [
 	{ name = "v1", type = "long" },
@@ -357,12 +395,14 @@ fields = [
 
 [[usermsg]]
 name = "PrintKB"
+channel = "text"
 fields = [
 	{ name = "text", type = "string" },
 ]
 
 [[usermsg]]
 name = "InvAdd"
+channel = "weapon"
 fields = [
 	{ name = "itemId", type = "long" },
 	{ name = "b1", type = "byte" },
@@ -373,6 +413,7 @@ fields = [
 
 [[usermsg]]
 name = "InvRemove"
+channel = "weapon"
 fields = [
 	{ name = "itemId", type = "long" },
 	{ name = "b", type = "byte" },
@@ -380,6 +421,7 @@ fields = [
 
 [[usermsg]]
 name = "Flamethwr"
+channel = "world"
 fields = [
 	{ name = "b", type = "byte" },
 	{ name = "pos1", type = "vec3" },
@@ -388,12 +430,14 @@ fields = [
 
 [[usermsg]]
 name = "ClassicMode"
+channel = "meta"
 fields = [
 	{ name = "on", type = "byte" },
 ]
 
 [[usermsg]]
 name = "WeaponSpr"
+channel = "weapon"
 fields = [
 	{ name = "index", type = "short" },
 	{ name = "sprite", type = "string" },
@@ -401,6 +445,7 @@ fields = [
 
 [[usermsg]]
 name = "ToggleElem"
+channel = "hud"
 fields = [
 	{ name = "b1", type = "byte" },
 	{ name = "b2", type = "byte" },
@@ -408,6 +453,7 @@ fields = [
 
 [[usermsg]]
 name = "CustSpr"
+channel = "hud"
 note = "10257 layout"
 fields = [
 	{ name = "b1", type = "byte" },
@@ -427,6 +473,7 @@ fields = [
 
 [[usermsg]]
 name = "NumDisplay"
+channel = "hud"
 note = "10257 layout"
 fields = [
 	{ name = "b1", type = "byte" },
@@ -446,6 +493,7 @@ fields = [
 
 [[usermsg]]
 name = "UpdateNum"
+channel = "hud"
 fields = [
 	{ name = "b", type = "byte" },
 	{ name = "f", type = "float" },
@@ -453,6 +501,7 @@ fields = [
 
 [[usermsg]]
 name = "TimeDisplay"
+channel = "hud"
 note = "10257 layout"
 fields = [
 	{ name = "b1", type = "byte" },
@@ -471,6 +520,7 @@ fields = [
 
 [[usermsg]]
 name = "UpdateTime"
+channel = "hud"
 fields = [
 	{ name = "b", type = "byte" },
 	{ name = "f1", type = "float" },
@@ -479,6 +529,7 @@ fields = [
 
 [[usermsg]]
 name = "VModelPos"
+channel = "weapon"
 fields = [
 	{ name = "b", type = "byte" },
 	{ name = "pos", type = "vec3" },
@@ -486,6 +537,7 @@ fields = [
 
 [[usermsg]]
 name = "ChangeSky"
+channel = "screen"
 fields = [
 	{ name = "skyName", type = "string" },
 	{ name = "vec", type = "vec3" },
@@ -493,6 +545,7 @@ fields = [
 
 [[usermsg]]
 name = "ClServerInfo"
+channel = "meta"
 fields = [
 	{ name = "b", type = "byte" },
 	{ name = "l", type = "long" },
@@ -501,6 +554,7 @@ fields = [
 
 [[usermsg]]
 name = "TE_CUSTOM"
+channel = "world"
 note = "subtype switch"
 fields = [
 	{ name = "subtype", type = "byte" },
@@ -514,6 +568,7 @@ fields = [
 
 [[usermsg]]
 name = "ScreenShake"
+channel = "screen"
 note = "engine-handled"
 fields = [
 	{ name = "amplitude", type = "short" },
@@ -523,6 +578,7 @@ fields = [
 
 [[usermsg]]
 name = "ScreenFade"
+channel = "screen"
 note = "engine-handled"
 fields = [
 	{ name = "duration", type = "short" },
@@ -542,18 +598,21 @@ fields = [
 
 [[usermsg]]
 name = "Gib"
+channel = "world"
 note = "raw: type-driven, each type reads 6 coords"
 raw = true
 fields = []
 
 [[usermsg]]
 name = "StartSound"
+channel = "world"
 note = "raw: flags bit-driven"
 raw = true
 fields = []
 
 [[usermsg]]
 name = "RampSprite"
+channel = "world"
 note = "raw: 6 flag variants, trailing byte count 0-7"
 raw = true
 fields = []
@@ -564,30 +623,35 @@ fields = []
 
 [[usermsg]]
 name = "SelAmmo"
+channel = "weapon"
 note = "raw: no client hook (client-side menu generates it)"
 raw = true
 fields = []
 
 [[usermsg]]
 name = "SoundList"
+channel = "meta"
 note = "raw: no client hook"
 raw = true
 fields = []
 
 [[usermsg]]
 name = "ASScriptName"
+channel = "meta"
 note = "raw: no client hook"
 raw = true
 fields = []
 
 [[usermsg]]
 name = "DeathMsg"
+channel = "score"
 note = "raw: server registers/sends it but 10257 client has no MsgFunc"
 raw = true
 fields = []
 
 [[usermsg]]
 name = "ClExtrasInfo"
+channel = "meta"
 note = "raw: CryptoPP-encrypted frame (only the header is readable)"
 raw = true
 fields = []

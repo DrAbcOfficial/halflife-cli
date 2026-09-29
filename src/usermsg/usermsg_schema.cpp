@@ -153,6 +153,17 @@ namespace
 			return false;
 		}
 		def.name.assign(*name);
+		if (auto v = t["channel"].value<std::string_view>())
+		{
+			// "all" is the cli.usermsg events / display_channels wildcard, so
+			// it must never become a channel of its own.
+			if (*v == "all" || *v == "*")
+			{
+				err = "channel name \"all\" is reserved (it is the events/display wildcard)";
+				return false;
+			}
+			def.channel = text::Lowercase(std::string(*v));
+		}
 		if (auto v = t["note"].value<std::string_view>())
 			def.note.assign(*v);
 		if (auto v = t["raw"].value<bool>())
@@ -233,7 +244,13 @@ namespace
 				}
 				auto it = schema.index.find(text::Lowercase(def.name));
 				if (it != schema.index.end())
-					schema.messages[it->second] = std::move(def);  // child overrides the base message
+				{
+					// Child overrides the base message; an override that does
+					// not name a channel stays in the base's channel.
+					if (def.channel.empty())
+						def.channel = schema.messages[it->second].channel;
+					schema.messages[it->second] = std::move(def);
+				}
 				else
 				{
 					schema.index.emplace(text::Lowercase(def.name), schema.messages.size());
@@ -252,5 +269,14 @@ bool UserMsgSchema::Load(const std::string& file)
 	index.clear();
 
 	std::set<std::string> visited;
-	return LoadInternal(file, visited, true, *this);
+	bool ok = LoadInternal(file, visited, true, *this);
+
+	// Anything still unnamed (no "channel" key here or in an inherited base)
+	// records under the default channel.
+	for (UserMsgDef& def : messages)
+	{
+		if (def.channel.empty())
+			def.channel = kDefaultChannel;
+	}
+	return ok;
 }

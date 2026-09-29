@@ -93,17 +93,22 @@ description, prints one line per message, and forwards the message to the game
 untouched. Messages the game DLL never hooks are registered display-only, so
 server-only traffic (e.g. svencoop `DeathMsg`, `SelAmmo`) is visible too.
 Every message is also recorded into the plugin's channel-keyed event ring
-(512 events per channel, sequence numbers shared across channels; the whole
-usermsg stream is the single `"usermsg"` channel for now). Which channels are
-echoed to the console while recorded is configured with
-`[usermsg] display_channels`; `cli.usermsg events` queries a channel:
+(512 events per channel, sequence numbers shared across channels). Each
+message's channel is its functional group, set by the optional `channel` key
+of its `[[usermsg]]` definition: `weapon` (guns/ammo/inventory), `status`
+(vitals/equipment), `text` (chat/text), `score` (scoreboard/teams/deaths),
+`screen` (fade/shake/camera), `world` (temporary-entity effects), `hud`
+(widgets/menus/timers), `meta` (server/session info); definitions without a
+channel record under `usermsg`. Which channels are echoed to the console
+while recorded is configured with `[usermsg] display_channels` (`all` =
+wildcard); `cli.usermsg events` queries one channel or the merged ring:
 
 ```text
 cli.usermsg                              # schema + hook state report
 cli.usermsg on|off                       # live console printing (recording unaffected)
-cli.usermsg events [channel C] [since N] [limit N] [name X]
+cli.usermsg events [channel C|all] [since N] [limit N] [name X]
                                          # recorded events as "#seq [usermsg] ..." lines
-cli.usermsg list|pending|<name>          # per-message state / field layout
+cli.usermsg list|pending|<name>          # per-message state / channel / field layout
 cli.usermsg reload                       # re-read the schema TOML
 ```
 
@@ -168,7 +173,7 @@ console_topmost = 0         # 1 = keep the CLI console window always on top
 enabled = 1                 # hook + decode server user messages
 file = ""                   # schema file; empty = "<gamedir>.toml" in configs/usermsgs/
 max_string = 64             # truncate decoded strings longer than this
-display_channels = "usermsg" # channels echoed to the console while recorded (comma separated; empty = record only)
+display_channels = "all"    # channels echoed to the console while recorded (comma separated; "all" = wildcard, empty = record only)
 ```
 
 ## CI
