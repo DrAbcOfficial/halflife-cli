@@ -22,7 +22,7 @@ import contextlib
 import logging
 import os
 import sys
-from typing import Annotated
+from typing import Annotated, Literal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -32,7 +32,14 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from game_process import BANNER_TIMEOUT_S, QUIT_TIMEOUT_S
-from halflifecli.manager import LAUNCH_TIMEOUT_CAP_S, QUIT_TIMEOUT_CAP_S, Manager
+from halflifecli.manager import (
+    DEFAULT_HOLD_MS,
+    LAUNCH_TIMEOUT_CAP_S,
+    MAX_HOLD_MS,
+    MOUSE_BUTTONS_MASK,
+    QUIT_TIMEOUT_CAP_S,
+    Manager,
+)
 from halflifecli.models import (
     ConsoleWindow,
     GameStatus,
@@ -56,6 +63,10 @@ INSTRUCTIONS = (
     "loaded and rendering (the main menu does not render the world). Verify "
     "cvar/command names with find_cvar before running them. Call quit_game when "
     "done. Use run_command for everything else. "
+    "To press keys or mouse buttons in the game use send_key / send_mouse: they "
+    "enter through the engine's own input path, work with the window hidden or "
+    "block_input on, and never touch other windows. Do not simulate input with "
+    "Win32 SendInput / keybd_event / mouse_event or posted window messages. "
     "The usermsg_* tools monitor server user messages: usermsg_events returns "
     "decoded network traffic (page with since_seq=usermsg_events(...).newest_seq, "
     "filter by channel or name), usermsg_messages shows the schema's message "
@@ -110,6 +121,26 @@ def find_cvar(
 ) -> str:
     """Check whether a cvar/command exists (cli.find); suggests similar names if not."""
     return manager.find_cvar(name)
+
+
+@mcp.tool()
+def send_key(
+    key: Annotated[str, Field(description="Engine key name as used by `bind` (w, SPACE, ENTER, ESCAPE, TAB, SHIFT, CTRL, F1, UPARROW, MOUSE1, MWHEELUP, SEMICOLON, ...), a single character, or a keynum 0-255")],
+    action: Annotated[Literal["tap", "press", "release"], Field(description="tap = press, hold for hold_ms, release; press/release send one edge (e.g. hold +forward across other calls)")] = "tap",
+    hold_ms: Annotated[int, Field(description="How long a tap keeps the key down", ge=0, le=MAX_HOLD_MS)] = DEFAULT_HOLD_MS,
+) -> str:
+    """Inject through SDL_PushEvent or the original CGame::WindowProc, bypassing block_input. Keys need a native mapping; mouse keys share send_mouse's focus restrictions. Wheel press is a pulse; release is a no-op."""
+    return manager.send_key(key, action, hold_ms)
+
+
+@mcp.tool()
+def send_mouse(
+    buttons: Annotated[int, Field(description="Mouse buttons to press: bitmask 1=left 2=right 4=middle 8=mouse4 16=mouse5", ge=1, le=MOUSE_BUTTONS_MASK)],
+    action: Annotated[Literal["tap", "press", "release"], Field(description="tap = press, hold for hold_ms, release; release lifts every button")] = "tap",
+    hold_ms: Annotated[int, Field(description="How long a tap keeps the buttons down", ge=0, le=MAX_HOLD_MS)] = DEFAULT_HOLD_MS,
+) -> str:
+    """Inject native mouse-button transitions (no cursor motion), bypassing block_input. The held mask is authoritative. Client focus restrictions apply, including when using send_key("MOUSE1")."""
+    return manager.send_mouse(buttons, action, hold_ms)
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))

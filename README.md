@@ -42,8 +42,10 @@ itself, so the game survives the client's lifetime; a game started elsewhere
 is attached to by reading the plugin's port file.
 
 Tools: `launch_game`, `game_status`, `run_command`, `find_cvar`,
-`read_console`, `snapshot` (returns a PNG image, downscaled by default),
-`quit_game`, and the UserMsg monitor tools `usermsg_status` (hook health),
+`send_key` / `send_mouse` (key and mouse-button events through the engine's
+SDL2 event queue or the original `CGame::WindowProc`), `read_console`, `snapshot`
+(returns a PNG image, downscaled by default), `quit_game`, and the UserMsg
+monitor tools `usermsg_status` (hook health),
 `usermsg_messages` (merged schema layouts), `usermsg_events` (decoded traffic,
 paged by `since_seq`), `usermsg_set_display`, and `usermsg_reload_schema`.
 
@@ -72,7 +74,11 @@ take a minute.
   `cli.rconinfo`, `cli.window <0|1|2>` (0=show, 1=off-screen default,
   2=SW_HIDE; note SW_HIDE may pause rendering on some engines),
   `cli.inputlock [on|off]` (lock the mouse cursor so it stops driving the
-  view; no argument reports the state), and
+  view; no argument reports the state), `cli.blockinput [on|off]` (make the
+  game ignore the physical keyboard and mouse buttons; no argument reports
+  the hook state and blocked-event counters), `cli.trapkey <key> <0|1>` and
+  `cli.trapmouse <buttons> <0|1>` (inject a key / mouse-button event through
+  the engine's own input path; they pass `block_input`), and
   `cli.find <name>` to check whether a cvar/command exists — when it does
   not, up to 10 similar names (substring match or small edit distance) are
   suggested, e.g. `cli.find abc` → `similar names: ab, ac, bc, c`.
@@ -86,6 +92,23 @@ take a minute.
 - **RCON**: `mcp/rcon_client.py <host> <port> <password> "cmd" ...` or any
   standard Source RCON client. The bound port is written to
   `svencoop\metahook\configs\halflifecli\halflifecli.port` for discovery.
+
+Input blocking uses `SDL_SetEventFilter` on SDL2 engines (including
+sdl2-compat), or a gamedata-resolved inline hook on `CGame_WindowProc` on
+legacy engines. SDL exports are resolved with `GetProcAddress`; the prior
+SDL filter is chained and restored on exit. Injection uses `SDL_PushEvent`
+or the original WindowProc trampoline, without generating OS input. There
+is no separate VGUI input filter. Missing backends fall back to disabling
+the game window.
+
+Key names use engine `bind` names; numeric keys without a native keyboard
+mapping are rejected. Mouse masks describe all held buttons, and are
+translated into individual transitions. `MOUSE1`–`MOUSE5` use the same path
+as `cli.trapmouse`, so client focus restrictions also apply to these keys.
+Wheel press generates one pulse; release does nothing. sdl2-compat needs the
+integer wheel conversion fix from `sdl2-compat-fork` commit `c24acad` (or a
+version containing it). Unpatched builds such as 2.32.57 lose the integer
+delta on a push/read roundtrip despite preserving the precise delta.
 
 ## UserMsg monitor
 
@@ -156,8 +179,8 @@ from a local map or a game server.
 [MetaHookSv](https://github.com/hzqst/MetaHookSv)) must be installed in
 `svencoop\metahook\plugins\` and listed in `plugins.lst`: console output is
 captured through its GameConsole interface callbacks and commands are executed
-through the engine's client command entry, so no engine code is hooked
-directly. `install_plugin.bat` ensures `VGUI2Extension.dll` is listed first in
+through the engine's client command entry. `install_plugin.bat` ensures
+`VGUI2Extension.dll` is listed first in
 `plugins.lst` and warns when the DLL itself is missing.
 
 ## Configuration
@@ -173,7 +196,7 @@ allowed_ips = ""            # comma separated whitelist; empty = bind address on
 
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
-block_input = false         # true = the game window ignores mouse/keyboard (CLI console unaffected)
+block_input = false         # true = the game ignores the physical keyboard/mouse buttons (cli.blockinput toggles at runtime; cli.trapkey/cli.trapmouse still inject)
 input_lock = false          # true = lock the mouse so it stops driving the view (cli.inputlock toggles at runtime)
 developer = 1               # set the developer cvar at startup
 console_topmost = false     # keep the CLI console window always on top

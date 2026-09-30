@@ -204,12 +204,11 @@ namespace
 		return g_pMetaHookAPI->BlobIATHook(blob, dllName, funcName, hookFunc, nullptr) != nullptr;
 	}
 
-	// Games ship against SDL2 or SDL3; hook whichever DLL name the module
-	// actually imports from.
+	// GoldSrc uses the SDL2 ABI, including when sdl2-compat forwards to SDL3.
+	// Native SDL3 mouse APIs use float coordinates and cannot use these hooks.
 	bool HookSDL(HMODULE module, BlobHandle_t blob, const char* funcName, void* hookFunc)
 	{
-		return HookOne(module, blob, "SDL2.dll", funcName, hookFunc) ||
-			HookOne(module, blob, "SDL3.dll", funcName, hookFunc);
+		return HookOne(module, blob, "SDL2.dll", funcName, hookFunc);
 	}
 }
 
@@ -226,10 +225,11 @@ namespace InputLock
 			g_realGetCursorPos = (GetCursorPos_t)GetProcAddress(user32, "GetCursorPos");
 			g_realSetCursorPos = (SetCursorPos_t)GetProcAddress(user32, "SetCursorPos");
 			HMODULE sdl = GetModuleHandleA("SDL2.dll");
-			if (!sdl)
-				sdl = GetModuleHandleA("SDL3.dll");
-			g_realSDLGetRelativeMouseState = (SDL_GetRelativeMouseState_t)GetProcAddress(sdl, "SDL_GetRelativeMouseState");
-			g_realSDLWarpMouseInWindow = (SDL_WarpMouseInWindow_t)GetProcAddress(sdl, "SDL_WarpMouseInWindow");
+			if (sdl)
+			{
+				g_realSDLGetRelativeMouseState = (SDL_GetRelativeMouseState_t)GetProcAddress(sdl, "SDL_GetRelativeMouseState");
+				g_realSDLWarpMouseInWindow = (SDL_WarpMouseInWindow_t)GetProcAddress(sdl, "SDL_WarpMouseInWindow");
+			}
 		}
 
 		HMODULE client = g_pMetaHookAPI->GetClientModule();

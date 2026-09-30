@@ -2,11 +2,11 @@
 
 // Mouse/cursor lock for the game window.
 //
-// block_input (WindowManager) only stops window *messages* reaching the game
-// window: the client DLL still polls the cursor itself on the non-raw input
-// path (GetCursorPos every frame, then SetCursorPos back to the window
-// centre), so a physically moving mouse keeps driving the view and the real
-// OS cursor gets warped. While this lock is active, IAT hooks on the client
+// block_input (EngineInput) only stops key and mouse-button *events*: the
+// client DLL still polls the cursor itself on the non-raw input path
+// (GetCursorPos every frame, then SetCursorPos back to the window centre), so
+// a physically moving mouse keeps driving the view and the real OS cursor
+// gets warped. While this lock is active, IAT hooks on the client
 // module make the game see "cursor always at the window centre" (mouse delta
 // 0 -> view frozen) and swallow its SetCursorPos, so the real cursor stays
 // wherever the user leaves it.

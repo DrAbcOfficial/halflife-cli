@@ -3,6 +3,7 @@
 #include "config/config.h"
 #include "console/console_bridge.h"
 #include "core/plugins.h"
+#include "input/engine_input.h"
 #include "input/input_lock.h"
 #include "rcon/rcon_server.h"
 #include "usermsg/usermsg_monitor.h"
@@ -18,6 +19,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace
 {
@@ -29,6 +32,9 @@ namespace
 		ConsoleBridge::WriteOut("  cli.rconinfo        - show RCON endpoint info");
 		ConsoleBridge::WriteOut("  cli.window <0|1|2>  - 0=show 1=off-screen(default) 2=SW_HIDE");
 		ConsoleBridge::WriteOut("  cli.inputlock on|off - lock the mouse cursor so it stops driving the view");
+		ConsoleBridge::WriteOut("  cli.blockinput on|off - make the game ignore the physical keyboard and mouse buttons");
+		ConsoleBridge::WriteOut("  cli.trapkey <key> <0|1> - send a key event through native engine input");
+		ConsoleBridge::WriteOut("  cli.trapmouse <buttons> <0|1> - send a mouse button event through native engine input");
 		ConsoleBridge::WriteOut("  cli.find <name>     - check cvar/command existence, suggests similar names");
 		ConsoleBridge::WriteOut("  cli.usermsg         - UserMsg monitor: on|off|reload|list|pending|<name>");
 		ConsoleBridge::WriteOut("  cli.help            - this help");
@@ -52,7 +58,7 @@ namespace
 			char buf[160];
 			_snprintf_s(buf, sizeof(buf), _TRUNCATE,
 				"cli.window mode = %d (0=show 1=offscreen 2=hide) block_input=%s",
-				WindowManager::GetMode(), WindowManager::GetBlockInput() ? "on" : "off");
+				WindowManager::GetMode(), EngineInput::GetBlockInput() ? "on" : "off");
 			ConsoleBridge::WriteOut(buf);
 			return;
 		}
@@ -83,6 +89,92 @@ namespace
 		{
 			gEngfuncs.Con_Printf("usage: cli.inputlock [on|off] - lock the mouse cursor so it stops driving the view\n");
 		}
+	}
+
+	void Cmd_CliBlockInput(void)
+	{
+		if (gEngfuncs.Cmd_Argc() < 2)
+		{
+			unsigned keyEvents = 0, keyBlocked = 0, mouseEvents = 0, mouseBlocked = 0;
+			EngineInput::GetStats(keyEvents, keyBlocked, mouseEvents, mouseBlocked);
+			std::string hooks = EngineInput::EngineHooksInstalled() ? "installed"
+				: std::string("missing (") + EngineInput::EngineHooksError() + ")";
+			gEngfuncs.Con_Printf("cli.blockinput: %s (engine hooks=%s, window fallback=%s, "
+				"physical events: key=%u blocked=%u, mouse=%u blocked=%u)\n",
+				EngineInput::GetBlockInput() ? "on" : "off", hooks.c_str(),
+				EngineInput::WindowFallbackActive() ? "on" : "off",
+				keyEvents, keyBlocked, mouseEvents, mouseBlocked);
+			return;
+		}
+		const char* arg = gEngfuncs.Cmd_Argv(1);
+		if (!_stricmp(arg, "on") || !_stricmp(arg, "off"))
+		{
+			EngineInput::SetBlockInput(!_stricmp(arg, "on"));
+			gEngfuncs.Con_Printf("cli.blockinput: %s (window fallback=%s)\n",
+				EngineInput::GetBlockInput() ? "on" : "off", EngineInput::WindowFallbackActive() ? "on" : "off");
+		}
+		else
+		{
+			gEngfuncs.Con_Printf("usage: cli.blockinput [on|off] - make the game ignore the physical keyboard and mouse buttons\n");
+		}
+	}
+
+	// The <0|1> "down" argument shared by cli.trapkey / cli.trapmouse.
+	bool ParseDown(const char* arg, bool& down)
+	{
+		if (!strcmp(arg, "1") || !strcmp(arg, "0"))
+		{
+			down = arg[0] == '1';
+			return true;
+		}
+		return false;
+	}
+
+	void Cmd_CliTrapKey(void)
+	{
+		bool down = false;
+		if (gEngfuncs.Cmd_Argc() != 3 || !ParseDown(gEngfuncs.Cmd_Argv(2), down))
+		{
+			gEngfuncs.Con_Printf("usage: cli.trapkey <key> <0|1> - send a key event through native engine input "
+				"(key: bind name such as w, SPACE, ENTER, MOUSE1, MWHEELUP, or a keynum)\n");
+			return;
+		}
+		const char* name = gEngfuncs.Cmd_Argv(1);
+		int key = EngineInput::KeyFromName(name);
+		if (key < 0)
+		{
+			gEngfuncs.Con_Printf("cli.trapkey: error: unknown key \"%s\"\n", name);
+			return;
+		}
+		if (!EngineInput::SendKey(key, down))
+		{
+			gEngfuncs.Con_Printf("cli.trapkey: error: input injection failed (%s)\n", EngineInput::EngineHooksError());
+			return;
+		}
+		gEngfuncs.Con_Printf("cli.trapkey: %s (%d) %s\n", name, key, down ? "down" : "up");
+	}
+
+	// Mask of the five mouse buttons native engine input carries.
+	const int MOUSE_BUTTONS_MASK = 0x1F;
+
+	void Cmd_CliTrapMouse(void)
+	{
+		bool down = false;
+		char* end = nullptr;
+		long buttons = gEngfuncs.Cmd_Argc() == 3 ? strtol(gEngfuncs.Cmd_Argv(1), &end, 10) : -1;
+		if (gEngfuncs.Cmd_Argc() != 3 || *end != '\0' || buttons < 0 || buttons > MOUSE_BUTTONS_MASK ||
+			!ParseDown(gEngfuncs.Cmd_Argv(2), down))
+		{
+			gEngfuncs.Con_Printf("usage: cli.trapmouse <buttons> <0|1> - send a mouse button event through "
+				"native engine input (buttons: held mask after the event, 1=left 2=right 4=middle 8=mouse4 16=mouse5)\n");
+			return;
+		}
+		if (!EngineInput::SendMouse((int)buttons, down))
+		{
+			gEngfuncs.Con_Printf("cli.trapmouse: error: input injection failed (%s)\n", EngineInput::EngineHooksError());
+			return;
+		}
+		gEngfuncs.Con_Printf("cli.trapmouse: buttons=%ld %s\n", buttons, down ? "down" : "up");
 	}
 
 	// Plain Levenshtein distance; cvar/command names are short so O(len*len) is fine.
@@ -219,6 +311,9 @@ void CliCommands::RegisterAll()
 	gEngfuncs.pfnAddCommand("cli.rconinfo", Cmd_CliRconInfo);
 	gEngfuncs.pfnAddCommand("cli.window", Cmd_CliWindow);
 	gEngfuncs.pfnAddCommand("cli.inputlock", Cmd_CliInputLock);
+	gEngfuncs.pfnAddCommand("cli.blockinput", Cmd_CliBlockInput);
+	gEngfuncs.pfnAddCommand("cli.trapkey", Cmd_CliTrapKey);
+	gEngfuncs.pfnAddCommand("cli.trapmouse", Cmd_CliTrapMouse);
 	gEngfuncs.pfnAddCommand("cli.find", Cmd_CliFind);
 	gEngfuncs.pfnAddCommand("cli.usermsg", Cmd_CliUserMsg);
 }

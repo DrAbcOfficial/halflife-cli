@@ -10,6 +10,7 @@ import glob
 import logging
 import os
 import threading
+import time
 
 import rcon_client
 from find_game import resolve_game_dir
@@ -28,7 +29,7 @@ from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
 
 from halflifecli.models import ConsoleWindow, GameStatus, UserMsgEvents
-from halflifecli.plugin_config import plugin_rcon_password, read_port_file
+from halflifecli.plugin_config import plugin_rcon_bind, plugin_rcon_password, read_port_file
 from halflifecli.screenshot import find_new_screenshot, shot_to_png
 from halflifecli.usermsg import (
     load_usermsg_schema,
@@ -43,6 +44,10 @@ LAUNCH_TIMEOUT_CAP_S = 600
 QUIT_TIMEOUT_CAP_S = 300
 SNAPSHOT_TIMEOUT_S = 10
 CLI_FIND_PREFIX = "cli.find:"
+INPUT_ACTIONS = ("tap", "press", "release")
+DEFAULT_HOLD_MS = 100
+MAX_HOLD_MS = 5000
+MOUSE_BUTTONS_MASK = 0x1F  # left, right, middle, mouse4, mouse5
 
 
 class Manager:
@@ -182,6 +187,43 @@ class Manager:
         # (texture loads, etc.); keep only cli.find's own lines when present.
         own = [ln for ln in out.splitlines() if ln.startswith(CLI_FIND_PREFIX)]
         return "\n".join(own) if own else out
+
+    def _trap_command(self, command):
+        """Run a cli.trapkey / cli.trapmouse command; plugin-reported failures become ToolErrors."""
+        prefix = command.split(" ", 1)[0]
+        out = self.run_command(command)
+        own = [ln for ln in out.splitlines() if ln.startswith((prefix + ":", "usage: " + prefix))]
+        if any(ln.startswith((prefix + ": error:", "usage:")) for ln in own):
+            raise ToolError("\n".join(own))
+        # Without console capture the reply is empty even though the event went in.
+        return "\n".join(own) if own else out
+
+    def _trap_sequence(self, press, release, action, hold_ms):
+        """press / release / tap (press, hold, release) through _trap_command."""
+        if action not in INPUT_ACTIONS:
+            raise ToolError(f"action must be one of {', '.join(INPUT_ACTIONS)}")
+        replies = []
+        if action in ("press", "tap"):
+            replies.append(self._trap_command(press))
+        if action == "tap":
+            time.sleep(min(max(hold_ms, 0), MAX_HOLD_MS) / 1000.0)
+        if action in ("release", "tap"):
+            replies.append(self._trap_command(release))
+        return "\n".join(replies)
+
+    def send_key(self, key, action, hold_ms):
+        key = (key or "").strip()
+        # One console token: whitespace, ';' and '"' would split or quote the command.
+        if not key or any(c.isspace() or c in ';"' for c in key):
+            raise ToolError("key must be one engine key name or character, e.g. w, SPACE, ENTER, MOUSE1, SEMICOLON")
+        return self._trap_sequence(f"cli.trapkey {key} 1", f"cli.trapkey {key} 0", action, hold_ms)
+
+    def send_mouse(self, buttons, action, hold_ms):
+        buttons = int(buttons)
+        if not 0 < buttons <= MOUSE_BUTTONS_MASK:
+            raise ToolError(f"buttons must be a mask in 1..{MOUSE_BUTTONS_MASK} (1=left 2=right 4=middle 8=mouse4 16=mouse5)")
+        # buttons is the held mask after the event, so release reports none held.
+        return self._trap_sequence(f"cli.trapmouse {buttons} 1", "cli.trapmouse 0 0", action, hold_ms)
 
     def read_console(self, max_lines, cursor):
         with self._lock:

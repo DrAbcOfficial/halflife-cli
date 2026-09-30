@@ -48,11 +48,11 @@ namespace
 	}
 
 	int g_mode = -1;      // -1 = not configured yet
-	bool g_blockInput = false;
+	bool g_inputDisabled = false;
 	HWND g_hwnd = nullptr;
 	WINDOWPLACEMENT g_original = { sizeof(WINDOWPLACEMENT) };
 	bool g_savedOriginal = false;
-	int g_appliedBlock = -1;  // block state currently applied to g_hwnd (-1 = unknown)
+	int g_appliedDisabled = -1;  // disabled state currently applied to g_hwnd (-1 = unknown)
 }
 
 namespace WindowManager
@@ -68,15 +68,10 @@ namespace WindowManager
 		return g_mode;
 	}
 
-	void SetBlockInput(bool block)
+	void SetInputDisabled(bool disabled)
 	{
-		g_blockInput = block;
+		g_inputDisabled = disabled;
 		ApplyConfiguredMode();
-	}
-
-	bool GetBlockInput()
-	{
-		return g_blockInput;
 	}
 
 	void* GetGameWindow()
@@ -91,7 +86,8 @@ namespace WindowManager
 	// on mode or video restarts.
 	void ApplyConfiguredMode()
 	{
-		if (g_mode <= 0 && !g_blockInput)
+		// A window disabled earlier still needs its re-enable pass.
+		if (g_mode <= 0 && !g_inputDisabled && g_appliedDisabled != 1)
 			return;
 
 		if (!IsWindow(g_hwnd))
@@ -99,7 +95,7 @@ namespace WindowManager
 			g_hwnd = FindGameWindow();
 			if (!g_hwnd)
 				return;
-			g_appliedBlock = -1;  // fresh window handle: re-assert the block state
+			g_appliedDisabled = -1;  // fresh window handle: re-assert the disabled state
 		}
 		if (!g_savedOriginal)
 		{
@@ -121,12 +117,12 @@ namespace WindowManager
 			ShowWindow(g_hwnd, SW_HIDE);
 		}
 
-		if ((g_blockInput ? 1 : 0) != g_appliedBlock)
+		if ((g_inputDisabled ? 1 : 0) != g_appliedDisabled)
 		{
 			// A disabled window ignores all mouse and keyboard input aimed at
 			// it; other windows (the CLI console) are unaffected.
-			EnableWindow(g_hwnd, g_blockInput ? FALSE : TRUE);
-			g_appliedBlock = g_blockInput ? 1 : 0;
+			EnableWindow(g_hwnd, g_inputDisabled ? FALSE : TRUE);
+			g_appliedDisabled = g_inputDisabled ? 1 : 0;
 		}
 	}
 
@@ -141,6 +137,6 @@ namespace WindowManager
 				SetWindowPlacement(g_hwnd, &g_original);
 		}
 		g_hwnd = nullptr;
-		g_appliedBlock = -1;
+		g_appliedDisabled = -1;
 	}
 }
