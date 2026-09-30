@@ -4,6 +4,8 @@
 #include "config/config.h"
 #include "console/console_bridge.h"
 #include "console/output_capture.h"
+#include "input/engine_input.h"
+#include "input/input_lock.h"
 #include "rcon/rcon_server.h"
 #include "usermsg/usermsg_monitor.h"
 #include "window/window_manager.h"
@@ -51,6 +53,8 @@ void IPluginsV4::Shutdown(void)
 	RconServer::Shutdown();
 	ConsoleBridge::Shutdown();
 	OutputCapture::Shutdown();
+	InputLock::Shutdown();
+	EngineInput::Shutdown();
 	UserMsgMonitor::Shutdown();
 }
 
@@ -97,7 +101,15 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	{
 		WindowManager::SetMode(CLI_Config().hide_window);
 	}
-	WindowManager::SetBlockInput(CLI_Config().block_input);
+
+	// After gExportfuncs is captured: the client module is fully loaded, so
+	// its IAT can be patched. Pass-through while the lock is off.
+	InputLock::InstallHooks();
+	InputLock::SetActive(CLI_Config().input_lock);
+
+	// Native input is initialized by LoadClient. Pass through while the block is off.
+	EngineInput::Install();
+	EngineInput::SetBlockInput(CLI_Config().block_input);
 
 	if (CLI_Config().rcon)
 	{
@@ -134,6 +146,8 @@ void IPluginsV4::ExitGame(int iResult)
 {
 	RconServer::Shutdown();
 	ConsoleBridge::Shutdown();
+	InputLock::Shutdown();
+	EngineInput::OnExitGame();
 	WindowManager::Restore();
 	UserMsgMonitor::Shutdown();
 }

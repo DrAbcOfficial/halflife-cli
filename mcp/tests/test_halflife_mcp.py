@@ -263,6 +263,7 @@ class FakeRconServer:
         self.echo = echo
         self.delay = delay
         self.canned = list((canned or {}).items())
+        self.commands = []  # every executed command, in arrival order
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._listener.bind(("127.0.0.1", 0))
@@ -302,6 +303,7 @@ class FakeRconServer:
                     if self.delay:
                         import time; time.sleep(self.delay)
                     cmd = body.decode()
+                    self.commands.append(cmd)
                     text = None
                     for needle, reply_body in self.canned:
                         if needle in cmd:
@@ -412,6 +414,29 @@ class TestToolsOverMemory(unittest.TestCase):
         finally:
             fake_srv.close()
 
+    def test_probe_with_stale_port_file(self):
+        # A port file left by an earlier run, nobody listening: not attached.
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "svencoop.exe"), "wb").close()
+            data_dir = os.path.join(d, "svencoop", "metahook", "configs", "halflifecli")
+            os.makedirs(data_dir)
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                closed_port = s.getsockname()[1]
+            with open(os.path.join(data_dir, "halflifecli.port"), "w") as f:
+                f.write(f"{closed_port}\n")
+            saved = {k: os.environ.get(k) for k in ("GAME_DIR", "HALFLIFE_DISABLE_ATTACH")}
+            os.environ["GAME_DIR"] = d
+            os.environ.pop("HALFLIFE_DISABLE_ATTACH")
+            try:
+                self.assertEqual("none", Manager().game_status().mode)
+            finally:
+                for k, v in saved.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+
     def test_no_game(self):
         mgr = Manager()
         server = self._client(mgr)
@@ -458,6 +483,70 @@ class TestToolsOverMemory(unittest.TestCase):
         finally:
             fake_srv.close()
 
+    def _input_manager(self, canned):
+        fake_srv = FakeRconServer(password="pw", echo=True, canned=canned)
+        mgr = Manager()
+        _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
+        mgr._password = "pw"
+        return fake_srv, mgr
+
+    def test_send_key_actions(self):
+        fake_srv, mgr = self._input_manager({
+            "cli.trapkey w 1": "cli.trapkey: w (119) down",
+            "cli.trapkey w 0": "cli.trapkey: w (119) up",
+            "cli.trapkey SPACE 1": "cli.trapkey: SPACE (32) down",
+        })
+        try:
+            async def main():
+                tap = await anyio.to_thread.run_sync(lambda: mgr.send_key("w", "tap", 0))
+                self.assertEqual("cli.trapkey: w (119) down\ncli.trapkey: w (119) up", tap)
+                press = await anyio.to_thread.run_sync(lambda: mgr.send_key("SPACE", "press", 0))
+                self.assertEqual("cli.trapkey: SPACE (32) down", press)
+                await anyio.to_thread.run_sync(lambda: mgr.send_key("w", "release", 0))
+            anyio.run(main)
+            self.assertEqual(["cli.trapkey w 1", "cli.trapkey w 0", "cli.trapkey SPACE 1", "cli.trapkey w 0"],
+                             fake_srv.commands)
+        finally:
+            fake_srv.close()
+
+    def test_send_mouse_tap_releases_all_buttons(self):
+        fake_srv, mgr = self._input_manager({})
+        try:
+            async def main():
+                await anyio.to_thread.run_sync(lambda: mgr.send_mouse(3, "tap", 0))
+            anyio.run(main)
+            self.assertEqual(["cli.trapmouse 3 1", "cli.trapmouse 0 0"], fake_srv.commands)
+        finally:
+            fake_srv.close()
+
+    def test_send_input_plugin_errors(self):
+        fake_srv, mgr = self._input_manager({
+            "cli.trapkey nosuchkey": 'cli.trapkey: error: unknown key "nosuchkey"',
+        })
+        try:
+            async def main():
+                from mcp.server.mcpserver.exceptions import ToolError
+                with self.assertRaises(ToolError) as caught:
+                    await anyio.to_thread.run_sync(lambda: mgr.send_key("nosuchkey", "tap", 0))
+                self.assertIn("unknown key", str(caught.exception))
+            anyio.run(main)
+            # a failed press is not followed by a release
+            self.assertEqual(["cli.trapkey nosuchkey 1"], fake_srv.commands)
+        finally:
+            fake_srv.close()
+
+    def test_send_input_rejects_bad_arguments(self):
+        from mcp.server.mcpserver.exceptions import ToolError
+        mgr = Manager()
+        for key in ("", "a b", "w;quit", '"w'):
+            with self.assertRaises(ToolError):
+                mgr.send_key(key, "tap", 0)
+        for buttons in (0, 32, -1):
+            with self.assertRaises(ToolError):
+                mgr.send_mouse(buttons, "tap", 0)
+        with self.assertRaises(ToolError):
+            mgr.send_key("w", "hold", 0)
+
     def test_usermsg_status_rejects_garbage(self):
         fake_srv = FakeRconServer(password="pw", echo=True)  # echoes, no report line
         try:
@@ -490,7 +579,8 @@ class TestStdioSmoke(unittest.TestCase):
                 tools = await client.list_tools()
                 names = {t.name for t in tools.tools}
                 expected = {"launch_game", "game_status", "run_command",
-                            "find_cvar", "read_console", "snapshot", "quit_game",
+                            "find_cvar", "send_key", "send_mouse",
+                            "read_console", "snapshot", "quit_game",
                             "usermsg_status", "usermsg_messages", "usermsg_events",
                             "usermsg_set_display", "usermsg_reload_schema"}
                 self.assertEqual(names, expected)

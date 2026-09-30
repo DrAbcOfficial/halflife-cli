@@ -87,6 +87,7 @@ via `read_console`. Tool ↔ manual mapping:
 | `launch_game` | the `subprocess.Popen` + banner-wait launch loop |
 | `run_command` | `rcon_client.py` / `run_command` |
 | `find_cvar` | `cli.find <name>` over RCON |
+| `send_key` / `send_mouse` | `cli.trapkey` / `cli.trapmouse` over RCON (see "Sending keyboard and mouse input") |
 | `read_console` | reading the piped stdout mirror (only for MCP-launched games) |
 | `snapshot` | the engine `screenshot` command + locating the newest image + converting to PNG (returns a PNG image directly, downscaled by default) |
 | `quit_game` | `quit` over RCON, then stdin, then kill |
@@ -156,7 +157,12 @@ This is your main observability channel.
 
 **Plugin commands** (alongside all normal game commands):
 `cli.help`, `cli.rconinfo` (current RCON endpoint), `cli.window <0|1|2>`
-(0=show, 1=off-screen default, 2=SW_HIDE), and `cli.find <name>` — check
+(0=show, 1=off-screen default, 2=SW_HIDE), `cli.inputlock [on|off]` (mouse
+motion stops driving the view), `cli.blockinput [on|off]` (the game ignores
+the physical keyboard and mouse buttons; no argument reports the hook state
+and blocked-event counters), `cli.trapkey <key> <0|1>` /
+`cli.trapmouse <buttons> <0|1>` (inject input, see "Sending keyboard and
+mouse input"), and `cli.find <name>` — check
 whether a cvar or console command exists before using it. On a hit it prints
 what it is and its value (passwords masked as `**`), e.g.
 `cli.find: "sv_cheats" exists (cvar, value "0")`; on a miss it prints up to
@@ -164,6 +170,63 @@ what it is and its value (passwords masked as `**`), e.g.
 distance), e.g. `cli.find: no cvar or command named "abc"` followed by
 `cli.find: similar names: ab, ac, bc, c`. Case-insensitive. `cli.help` also
 doubles as a liveness probe — if its output comes back, the bridge works.
+
+## Sending keyboard and mouse input
+
+To press keys or mouse buttons in the game, use the MCP tools `send_key` /
+`send_mouse`, or without MCP the plugin commands `cli.trapkey` /
+`cli.trapmouse` over RCON or stdin. They inject with `SDL_PushEvent` on SDL2
+engines, or call the original `CGame::WindowProc` on non-SDL engines.
+
+**Do not simulate input with Win32**: no `SendInput`, `keybd_event`,
+`mouse_event`, or posted/sent `WM_KEYDOWN` / `WM_LBUTTONDOWN` messages. The
+game window is off-screen and unfocused by default, so OS-level input goes to
+whatever window has focus (the user's editor, browser, ...), and
+`block_input` drops it anyway. The engine-level API needs no focus, no
+visible window, and passes `block_input`.
+
+| Want | MCP | Plugin command |
+|---|---|---|
+| Tap a key (press, hold, release) | `send_key(key="SPACE")` (`hold_ms`, default 100) | `cli.trapkey SPACE 1`, then `cli.trapkey SPACE 0` |
+| Hold a key across other calls (e.g. walk) | `send_key(key="w", action="press")` … `send_key(key="w", action="release")` | `cli.trapkey w 1` … `cli.trapkey w 0` |
+| Fire / use a mouse-button bind | `send_key(key="MOUSE1")` | `cli.trapkey MOUSE1 1` / `0` |
+| Raw mouse-button state | `send_mouse(buttons=1)` | `cli.trapmouse 1 1`, then `cli.trapmouse 0 0` |
+
+- `key` is a `bind` key name: a single character (`w`, `1`, `e`), `SPACE`,
+  `ENTER`, `ESCAPE`, `TAB`, `SHIFT`, `CTRL`, `ALT`, `F1`–`F12`, `UPARROW`,
+  `MOUSE1`–`MOUSE5`, `MWHEELUP` / `MWHEELDOWN`, `SEMICOLON`, `KP_*`, … or a
+  keynum 0–255. An unknown name answers `cli.trapkey: error: unknown key`.
+  Numeric keynums without a native keyboard mapping return an injection error.
+- `cli.trapmouse <buttons>` is the held-button mask *after* the event
+  (1=left 2=right 4=middle 8=mouse4 16=mouse5), exactly as the engine passes
+  it; release with `cli.trapmouse 0 0`. The mask determines individual native
+  button transitions. It reaches the client's
+  `IN_MouseEvent`, which Sven Co-op ignores while the game window is not
+  focused (the normal state for a hidden window), the same as a real click.
+  `send_key("MOUSE1")` / `cli.trapkey MOUSE1` uses the same native mouse path
+  and has the same focus restriction.
+- Native events reach gameplay and VGUI. Key events do not synthesize text
+  input events; use console commands for text entry.
+- Wheel press is one pulse (the engine generates both key edges); release
+  does nothing. sdl2-compat requires the integer wheel conversion fix from
+  `sdl2-compat-fork` commit `c24acad` (or a version containing it). Unpatched
+  2.32.57 loses the integer delta; patched builds pass both directions.
+- There is no mouse *motion* injection. To turn or aim, use commands such as
+  `+left` / `+right` / `+lookup` / `+lookdown` (speed from `cl_yawspeed` /
+  `cl_pitchspeed`).
+- Verify a key did something by binding it to an `echo` first
+  (`bind k "echo K_PRESSED"`, then `send_key("k")`, then look for the line).
+
+**`block_input`** (`[cli] block_input = true`, or `cli.blockinput on` at
+runtime) makes the game ignore the physical keyboard and mouse buttons,
+including in menus and the console, while the window stays movable and
+resizable. Injected events still go through. `input_lock` is separate: it
+stops physical mouse motion from turning the view. `cli.blockinput` without
+arguments reports `engine hooks`, `window fallback`, and per-type counters
+of physical events seen and blocked. SDL2 uses `SDL_SetEventFilter` and
+chains the prior filter; non-SDL uses a gamedata-resolved inline hook on
+`CGame_WindowProc`. Both block before gameplay/VGUI dispatch. Missing
+backends fall back to disabling the game window (`window fallback=on`).
 
 ## Seeing the game: screenshots for vision-capable agents
 
@@ -220,7 +283,8 @@ allowed_ips = ""
 
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
-block_input = false         # true = the game window ignores mouse/keyboard (CLI console unaffected)
+block_input = false         # true = the game ignores the physical keyboard/mouse buttons (injected input still passes)
+input_lock = false          # true = physical mouse motion stops driving the view
 developer = 1
 console_topmost = false     # keep the CLI console window always on top
 ```
@@ -268,7 +332,10 @@ Source map (one src/ folder per responsibility), for code-level debugging:
 after execution), `src/console/output_capture.cpp` (console capture via
 VGUI2Extension GameConsole callbacks; no engine code hooks),
 `src/rcon/rcon_server.cpp` (protocol, auth, limits),
-`src/window/window_manager.cpp` (hide modes),
+`src/window/window_manager.cpp` (hide modes, window-level input fallback),
+`src/input/engine_input.cpp` (`block_input` SDL filter / CGame WindowProc hook,
+`cli.trapkey` / `cli.trapmouse` injection), `src/input/input_lock.cpp`
+(`input_lock` mouse-view freeze),
 `src/config/config.cpp` (TOML config parsing),
 `src/util/toml_file.cpp` (engine-filesystem TOML reading shared by config and
 schema), `src/usermsg/usermsg_schema.cpp` (UserMsg TOML loader with extends

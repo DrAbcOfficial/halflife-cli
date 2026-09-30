@@ -15,7 +15,8 @@ struct CliConfig
 
 	// [cli]
 	int hide_window = 1;                      // 0 = off, 1 = move off-screen (default), 2 = ShowWindow(SW_HIDE)
-	bool block_input = false;                 // true = the game window ignores mouse/keyboard (the CLI console is a separate window)
+	bool block_input = false;                 // true = filter native keyboard/mouse events; cli.trapkey/cli.trapmouse still inject
+	bool input_lock = false;                  // true = lock the mouse input (client user32 + engine SDL) so it stops driving the view
 	int developer = 1;                        // set the "developer" cvar so verbose engine output flows
 	bool capture = true;                      // capture console output via VGUI2Extension GameConsole callbacks
 	bool console = true;                      // CLI console bridge: stdin reader + stdout mirror

@@ -1,7 +1,6 @@
 #include "console/output_capture.h"
 #include "core/plugins.h"
-
-#include <IVGUI2Extension.h>
+#include "util/vgui2_extension.h"
 
 #include <mutex>
 #include <deque>
@@ -121,15 +120,7 @@ namespace OutputCapture
 		if (g_pVGUI2Extension)
 			return true;
 
-		HMODULE hVGUI2Extension = GetModuleHandleA("VGUI2Extension.dll");
-		if (!hVGUI2Extension)
-			return false;
-
-		CreateInterfaceFn factory = Sys_GetFactory((HINTERFACEMODULE)hVGUI2Extension);
-		if (!factory)
-			return false;
-
-		g_pVGUI2Extension = (IVGUI2Extension *)factory(VGUI2_EXTENSION_INTERFACE_VERSION, nullptr);
+		g_pVGUI2Extension = FindVGUI2Extension();
 		if (!g_pVGUI2Extension)
 			return false;
 
