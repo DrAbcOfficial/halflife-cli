@@ -6,6 +6,13 @@ the game window is hidden (but alive, so `screenshot` keeps working), a CLI
 console is exposed, commands come in through stdin, and a Source RCON server
 runs on a random localhost port.
 
+### Trigger the bunker nuke with DeepSeek
+
+
+https://github.com/user-attachments/assets/f2f113e6-9ad6-45f7-940a-90005684d6b7
+
+
+
 ## Build
 
 Requirements: Visual Studio 2019+ with C++ x86/x64 toolset, CMake 3.21+, git.
