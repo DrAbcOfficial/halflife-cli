@@ -3,6 +3,7 @@
 #include "config/config.h"
 #include "core/plugins.h"
 #include "usermsg/event_log.h"
+#include "usermsg/hook_policy.h"
 #include "usermsg/usermsg_decoder.h"
 #include "usermsg/usermsg_schema.h"
 #include "util/text.h"
@@ -81,15 +82,21 @@ namespace
 		return 1;
 	}
 
-	// For every schema message: wrap the engine entry if one exists (ours or
-	// the client DLL's), otherwise create a display-only entry. Safe to run
-	// any number of times; it converges no matter whether the client DLL has
-	// registered the name yet, and repairs entries the engine recreated.
-	void TryHookAll(bool& changed)
-	{
-		for (HookEntry& e : g_entries)
+		// Repair client registrations while preserving later plugin wrappers.
+		// HookUserMsg replaces only the head; it cannot inspect the chain.
+		void TryHookAll(bool& changed)
 		{
-			pfnUserMsgHook current = g_pMetaHookAPI->HookUserMsg(e.def->name.c_str(), &UserMsg_Dispatch);
+			for (HookEntry& e : g_entries)
+			{
+				auto entry = g_pMetaHookAPI->FindUserMsgHook(e.def->name.c_str());
+				pfnUserMsgHook head = entry ? entry->function : nullptr;
+				const uintptr_t address = reinterpret_cast<uintptr_t>(head);
+				const uintptr_t client = reinterpret_cast<uintptr_t>(g_pMetaHookAPI->GetClientBase());
+				const bool clientCallback = client && address >= client &&
+					address - client < g_pMetaHookAPI->GetClientSize();
+				if (!UserMsgHooks::ShouldInstall(e.known, head, &UserMsg_Dispatch, e.original, clientCallback))
+					continue;
+				pfnUserMsgHook current = g_pMetaHookAPI->HookUserMsg(e.def->name.c_str(), &UserMsg_Dispatch);
 			if (current == &UserMsg_Dispatch)
 			{
 				// Our dispatcher is already installed. Whether the entry
@@ -187,13 +194,12 @@ namespace
 		// previous schema, and the wrapped originals live only in g_entries;
 		// carry them across the rebuild (and hand back the hooks of messages
 		// dropped from the schema), or the game DLL would stop receiving them.
-		std::map<std::string, pfnUserMsgHook> oldOriginals;
+			std::map<std::string, HookEntry> oldOriginals;
 		std::vector<std::string> oldNames;
 		for (const HookEntry& e : g_entries)
 		{
 			oldNames.push_back(e.def->name);
-			if (e.original)
-				oldOriginals[text::Lowercase(e.def->name.c_str())] = e.original;
+				oldOriginals[text::Lowercase(e.def->name.c_str())] = e;
 		}
 
 		UserMsgSchema::LoadResult result = g_schema.Load(g_schemaFile);
@@ -216,8 +222,8 @@ namespace
 				auto it = oldOriginals.find(text::Lowercase(def.name.c_str()));
 				if (it != oldOriginals.end())
 				{
-					e.original = it->second;
-					e.known = true;
+						e.original = it->second.original;
+						e.known = it->second.known;
 				}
 				g_entries.push_back(e);
 			}
@@ -230,8 +236,8 @@ namespace
 			if (g_schema.index.count(text::Lowercase(name.c_str())))
 				continue;
 			auto it = oldOriginals.find(text::Lowercase(name.c_str()));
-			if (it != oldOriginals.end())
-				g_pMetaHookAPI->HookUserMsg(name.c_str(), it->second);
+				if (it != oldOriginals.end() && it->second.original)
+					g_pMetaHookAPI->HookUserMsg(name.c_str(), it->second.original);
 		}
 		g_reported = false;
 

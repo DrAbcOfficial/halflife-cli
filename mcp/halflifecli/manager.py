@@ -29,7 +29,7 @@ from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
 
 from halflifecli.models import ConsoleWindow, GameStatus, UserMsgEvents
-from halflifecli.plugin_config import plugin_rcon_bind, plugin_rcon_password, read_port_file
+from halflifecli.plugin_config import plugin_rcon_password, read_endpoint_file
 from halflifecli.screenshot import find_new_screenshot, shot_to_png
 from halflifecli.usermsg import (
     load_usermsg_schema,
@@ -61,6 +61,8 @@ class Manager:
         self._host = None
         self._port = None
         self._password = ""
+        self._protocol = "source-tcp"
+        self._endpoint = None
         self._attached_rcon = None
         self._attached_key = None
 
@@ -77,22 +79,42 @@ class Manager:
         gd, _ = resolve_game_dir(None)
         if not gd:
             return None
-        port = read_port_file(gd)
-        if port is None:
+        endpoint = read_endpoint_file(gd)
+        if endpoint is None:
             return None
-        host = rcon_connect_host(plugin_rcon_bind(gd))
         password = plugin_rcon_password(gd)
+        key = (gd, endpoint, password)
+        if self._attached_key != key:
+            if self._attached_rcon is not None:
+                self._attached_rcon.close()
+            self._attached_rcon = rcon_client.RconConnection(
+                endpoint.host, endpoint.port, password, timeout=2, protocol=endpoint.protocol)
+            self._attached_key = key
         try:
-            rcon_client.RconConnection(host, port, password).open()
+            self._attached_rcon.open()
         except Exception:
+            self._attached_rcon.close()
             return None
-        return GameStatus(running=True, pid=None, mode="attached",
-                          host=host, port=port, game_dir=gd)
+        return GameStatus(running=True, pid=endpoint.pid, mode="attached",
+                          host=endpoint.host, port=endpoint.port, protocol=endpoint.protocol, game_dir=gd)
+
+    def _refresh_managed_endpoint_locked(self):
+        if self._endpoint is None and self._protocol == "source-tcp":
+            return  # legacy launch / injected test session
+        endpoint = read_endpoint_file(self._game_dir, expected_pid=self._proc.pid)
+        if endpoint is None:
+            raise ToolError("game RCON endpoint is not ready or belongs to a stale process")
+        if endpoint != self._endpoint:
+            if self._rcon is not None:
+                self._rcon.close()
+            self._rcon = None
+            self._endpoint = endpoint
+            self._host, self._port, self._protocol = endpoint.host, endpoint.port, endpoint.protocol
 
     def _status_locked(self):
         if self._proc is not None and self._proc.alive:
             return GameStatus(running=True, pid=self._proc.pid, mode="managed",
-                              host=self._host, port=self._port, game_dir=self._game_dir)
+                              host=self._host, port=self._port, protocol=self._protocol, game_dir=self._game_dir)
         if self._proc is not None:
             return GameStatus(running=False, pid=self._proc.pid, mode="managed",
                               exit_code=self._proc.returncode, game_dir=self._game_dir)
@@ -101,17 +123,13 @@ class Manager:
     def _connection_locked(self):
         """RconConnection for the current game; raises ToolError when none."""
         if self._proc is not None and self._proc.alive:
+            self._refresh_managed_endpoint_locked()
             if self._rcon is None:
-                self._rcon = rcon_client.RconConnection(self._host, self._port, self._password)
+                self._rcon = rcon_client.RconConnection(self._host, self._port, self._password, protocol=self._protocol)
             return self._rcon
         attached = self._probe_attached()
         if attached is None:
             raise ToolError("no game running; call launch_game first")
-        key = (attached.game_dir, attached.host, attached.port)
-        if self._attached_rcon is None or self._attached_key != key:
-            self._attached_rcon = rcon_client.RconConnection(
-                attached.host, attached.port, plugin_rcon_password(attached.game_dir))
-            self._attached_key = key
         return self._attached_rcon
 
     def _game_dir_locked(self):
@@ -144,6 +162,19 @@ class Manager:
             proc.start()
             try:
                 host, port = proc.wait_for_banner(timeout_s)
+                protocol = proc.rcon_protocol
+                endpoint = read_endpoint_file(gd, expected_pid=proc.pid)
+                if protocol == "goldsrc-udp" and (endpoint is None or endpoint.protocol != protocol):
+                    raise RconStartError("Native UDP banner has no fresh matching endpoint metadata")
+                if endpoint is not None:
+                    host, port, protocol = endpoint.host, endpoint.port, endpoint.protocol
+                password = plugin_rcon_password(gd)
+                connection = rcon_client.RconConnection(host, port, password, protocol=protocol)
+                try:
+                    connection.open()
+                except Exception:
+                    connection.close()
+                    raise
             except RconStartError as e:
                 proc.stop(timeout=EXIT_CODE_GRACE_S)
                 raise ToolError(str(e))
@@ -154,12 +185,18 @@ class Manager:
             self._game_dir = gd
             self._host = host
             self._port = port
-            self._password = plugin_rcon_password(gd)
-            self._rcon = None  # connect lazily on the first command
+            self._protocol = protocol
+            self._endpoint = endpoint
+            self._password = password
+            if self._rcon is not None:
+                self._rcon.close()
+            self._rcon = connection
             return self._status_locked()
 
     def game_status(self):
         with self._lock:
+            if self._proc is not None and self._proc.alive:
+                self._refresh_managed_endpoint_locked()
             return self._status_locked()
 
     def run_command(self, command):
@@ -345,7 +382,12 @@ class Manager:
         with self._lock:
             proc = self._proc
             conn = self._rcon
-        if proc is None or not proc.alive:
-            return
-        rcon_quit = (lambda: conn.command("quit")) if conn is not None else None
-        log.info("stopping managed game: %s", proc.stop(quit_command=rcon_quit).summary)
+        try:
+            if proc is not None and proc.alive:
+                rcon_quit = (lambda: conn.command("quit")) if conn is not None else None
+                log.info("stopping managed game: %s", proc.stop(quit_command=rcon_quit).summary)
+        finally:
+            if conn is not None:
+                conn.close()
+            if self._attached_rcon is not None:
+                self._attached_rcon.close()

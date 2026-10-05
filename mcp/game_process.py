@@ -32,9 +32,8 @@ PORT_FILE_NAME = "halflifecli.port"
 # Off-screen hiding needs windowed mode; -novid skips the intro video.
 FORCED_ARGS = ("-windowed", "-novid")
 # The plugin prints one of these once RCON startup is decided (src/plugins.cpp).
-# The host is the configured bind string, which may be empty or not an IPv4
-# literal; see rcon_connect_host().
-BANNER_RE = re.compile(r"halflife-cli: RCON (?:listening on (\S*):(\d+)|failed to start \((.*)\))")
+# Group 3 retains the legacy startup-error contract; protocol is group 4.
+BANNER_RE = re.compile(r"halflife-cli: RCON (?:listening on (\S*):(\d+)|failed to start \((.*)\))(?: \((goldsrc-udp|source-tcp),)?")
 STDIN_QUIT_LINE = "quit"
 LOOPBACK = "127.0.0.1"
 
@@ -169,6 +168,7 @@ class GameProcess:
         self._stdin_lock = threading.Lock()
         self._proc = None
         self._job = None
+        self.rcon_protocol = "source-tcp"  # unmarked old banners are TCP only
 
     def start(self):
         if self._proc is not None:
@@ -268,6 +268,7 @@ class GameProcess:
         match = self.wait_for(BANNER_RE, timeout)
         if match.group(3) is not None:
             raise RconStartError("plugin RCON failed to start: %s" % match.group(3))
+        self.rcon_protocol = match.group(4) or "source-tcp"
         return rcon_connect_host(match.group(1)), int(match.group(2))
 
     def send_stdin(self, line):
@@ -305,9 +306,11 @@ class GameProcess:
                 steps.append("quit sent via RCON")
                 replied = True
             except (OSError, ValueError) as e:
-                # An exiting game often drops the connection before replying,
-                # so this is not necessarily a failure; stdin is the backstop.
+                # A sent UDP quit may have executed. Wait for exit before any
+                # explicit stdin fallback; never retransmit it on a timeout.
                 steps.append("no RCON reply to quit (%s)" % e)
+                if isinstance(e, TimeoutError) and "may have executed" in str(e):
+                    replied = True
         if not replied:
             steps.append("quit sent via stdin" if self.send_stdin(STDIN_QUIT_LINE) else "stdin already closed")
         code = self.wait(timeout)

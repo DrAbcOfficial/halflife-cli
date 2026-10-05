@@ -610,12 +610,22 @@ class TestEndToEnd(unittest.TestCase):
                 launched = await call("launch_game", {"timeout_s": 120})
                 self.assertTrue(launched.structured_content.get("running"))
                 self.assertEqual(launched.structured_content.get("mode"), "managed")
+                self.assertEqual("goldsrc-udp", launched.structured_content.get("protocol"))
+                status = await call("game_status")
+                self.assertTrue(status.structured_content.get("running"))
 
                 echo = await call("run_command", {"command": "echo hello_from_e2e"})
                 self.assertIn("hello_from_e2e", echo.content[0].text)
 
                 found = await call("find_cvar", {"name": "sv_cheats"})
                 self.assertIn("exists", found.content[0].text)
+                await call("send_key", {"key": "k", "action": "release"})
+                await call("send_mouse", {"buttons": 1, "action": "release"})
+                await call("usermsg_status")
+                await call("usermsg_messages")
+                await call("usermsg_set_display", {"enabled": False})
+                await call("usermsg_reload_schema", {"sync_from_repo": False})
+                await call("usermsg_set_display", {"enabled": True})
 
                 await call("run_command", {"command": "map osprey"})
                 import time
@@ -638,8 +648,12 @@ class TestEndToEnd(unittest.TestCase):
                 types = {b.type for b in shot.content}
                 self.assertIn("image", types)
                 self.assertTrue(any(getattr(b, "mime_type", "") == "image/png" for b in shot.content))
+                events = await call("usermsg_events")
+                self.assertTrue(events.structured_content.get("events"))
 
-                await call("quit_game", {"timeout_s": 30})
+                stopped = await call("quit_game", {"timeout_s": 30})
+                self.assertNotIn("killed", stopped.content[0].text)
+                self.assertIn("exit code 0", stopped.content[0].text)
 
         anyio.run(main)
 

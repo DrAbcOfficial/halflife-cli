@@ -12,6 +12,7 @@ struct CliConfig
 	std::string rcon_bind = "127.0.0.1";      // localhost only by default
 	std::string rcon_password;                // empty = accept any auth (bind address still applies)
 	std::string rcon_allowed_ips;             // comma separated; empty = bind address is the only gate
+	bool rcon_legacy_binding = false;         // warn about bind/port on Sven UDP
 
 	// [cli]
 	int hide_window = 1;                      // 0 = off, 1 = move off-screen (default), 2 = ShowWindow(SW_HIDE)

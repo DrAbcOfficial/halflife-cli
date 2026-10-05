@@ -9,6 +9,7 @@ class GameStatus(BaseModel):
     mode: str  # "managed" (started by this server), "attached", or "none"
     host: str | None = None
     port: int | None = None
+    protocol: str | None = None
     exit_code: int | None = None
     game_dir: str | None = None
 

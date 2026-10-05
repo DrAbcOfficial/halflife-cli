@@ -59,6 +59,7 @@ bool CliConfig::Load()
 
 	if (const toml::table* rcon = tbl["rcon"].as_table())
 	{
+		rcon_legacy_binding = rcon->contains("port") || rcon->contains("bind");
 		SetInt(*rcon, "port", rcon_port);
 		SetString(*rcon, "bind", rcon_bind);
 		SetString(*rcon, "password", rcon_password);

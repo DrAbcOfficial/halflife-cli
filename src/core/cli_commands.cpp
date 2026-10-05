@@ -2,6 +2,7 @@
 
 #include "config/config.h"
 #include "console/console_bridge.h"
+#include "console/output_capture.h"
 #include "core/plugins.h"
 #include "input/engine_input.h"
 #include "input/input_lock.h"
@@ -24,31 +25,39 @@
 
 namespace
 {
+	void Reply(const std::string& message)
+	{
+		gEngfuncs.Con_Printf("%s\n", message.c_str());
+		if (!OutputCapture::Available())
+			ConsoleBridge::WriteOut(message);
+	}
 	void Cmd_CliHelp(void)
 	{
 		// routed through the hooked engine Con_Printf: doubles as an execution probe
 		gEngfuncs.Con_Printf("cli.help executed (halflife-cli)\n");
-		ConsoleBridge::WriteOut("halflife-cli commands:");
-		ConsoleBridge::WriteOut("  cli.rconinfo        - show RCON endpoint info");
-		ConsoleBridge::WriteOut("  cli.window <0|1|2>  - 0=show 1=off-screen(default) 2=SW_HIDE");
-		ConsoleBridge::WriteOut("  cli.inputlock on|off - lock the mouse cursor so it stops driving the view");
-		ConsoleBridge::WriteOut("  cli.blockinput on|off - make the game ignore the physical keyboard and mouse buttons");
-		ConsoleBridge::WriteOut("  cli.trapkey <key> <0|1> - send a key event through native engine input");
-		ConsoleBridge::WriteOut("  cli.trapmouse <buttons> <0|1> - send a mouse button event through native engine input");
-		ConsoleBridge::WriteOut("  cli.find <name>     - check cvar/command existence, suggests similar names");
-		ConsoleBridge::WriteOut("  cli.usermsg         - UserMsg monitor: on|off|reload|list|pending|<name>");
-		ConsoleBridge::WriteOut("  cli.help            - this help");
-		ConsoleBridge::WriteOut("any other line is executed as a game console command (e.g. 'status', 'snapshot')");
+		Reply("halflife-cli commands:");
+		Reply("  cli.rconinfo        - show RCON endpoint info");
+		Reply("  cli.window <0|1|2>  - 0=show 1=off-screen(default) 2=SW_HIDE");
+		Reply("  cli.inputlock on|off - lock the mouse cursor so it stops driving the view");
+		Reply("  cli.blockinput on|off - make the game ignore the physical keyboard and mouse buttons");
+		Reply("  cli.trapkey <key> <0|1> - send a key event through native engine input");
+		Reply("  cli.trapmouse <buttons> <0|1> - send a mouse button event through native engine input");
+		Reply("  cli.find <name>     - check cvar/command existence, suggests similar names");
+		Reply("  cli.usermsg         - UserMsg monitor: on|off|reload|list|pending|<name>");
+		Reply("  cli.help            - this help");
+		Reply("any other line is executed as a game console command (e.g. 'status', 'snapshot')");
 	}
 
 	void Cmd_CliRconInfo(void)
 	{
-		char buf[256];
+		char buf[768];
 		_snprintf_s(buf, sizeof(buf), _TRUNCATE,
-			"RCON bind=%s port=%u password=%s",
-			CLI_Config().rcon_bind.c_str(), RconServer::CurrentPort(),
-			CLI_Config().rcon_password.empty() ? "none" : "set");
-		ConsoleBridge::WriteOut(buf);
+			"RCON protocol=%s status=%s bind=%s port=%u password=%s%s%s",
+			RconServer::Protocol(), RconServer::Running() ? "ready" : "inactive",
+			RconServer::CurrentAddress().c_str(), RconServer::CurrentPort(),
+			RconServer::PasswordSet() ? "set" : "none",
+			RconServer::Error().empty() ? "" : " error=", RconServer::Error().c_str());
+		Reply(buf);
 	}
 
 	void Cmd_CliWindow(void)
@@ -59,11 +68,11 @@ namespace
 			_snprintf_s(buf, sizeof(buf), _TRUNCATE,
 				"cli.window mode = %d (0=show 1=offscreen 2=hide) block_input=%s",
 				WindowManager::GetMode(), EngineInput::GetBlockInput() ? "on" : "off");
-			ConsoleBridge::WriteOut(buf);
+			Reply(buf);
 			return;
 		}
 		WindowManager::SetMode(atoi(gEngfuncs.Cmd_Argv(1)));
-		ConsoleBridge::WriteOut("cli.window applied");
+		Reply("cli.window applied");
 	}
 
 	void Cmd_CliInputLock(void)

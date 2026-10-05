@@ -12,8 +12,9 @@ Usage: python mcp/acceptance_test.py [--game "D:\\...\\Sven Co-op"]
 """
 
 import glob
+import json
 import os
-import socket
+from pathlib import Path
 import sys
 import time
 
@@ -21,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rcon_client
 from game_process import IMAGE_EXTENSIONS, plugin_config_path, port_file_path, screenshots_dir
 from testcommon import launch_test_game, parse_game_arg, resolve_or_fail
+from halflifecli.plugin_config import read_endpoint_file
 
 USAGE = ("Run mcp/find_game.py, set GAME_DIR, write mcp/game_dir.txt, "
          "or pass --game <path>.")
@@ -36,9 +38,19 @@ def main():
     # Fixed config for the run: password set so both auth paths are exercised.
     cfg_path = plugin_config_path(game_dir)
     os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
-    with open(cfg_path, "w") as f:
-        f.write('[rcon]\npassword = "test123"\n\n[cli]\nhide_window = 1\ndeveloper = 1\n')
-    print("[test] wrote config with password=test123")
+    config = Path(cfg_path)
+    previous = config.read_bytes() if config.exists() else None
+    try:
+        config.write_text('[rcon]\npassword = "test123"\n\n[cli]\nhide_window = 1\ndeveloper = 1\n')
+        return run_test(game_dir, shots_dir)
+    finally:
+        if previous is None:
+            config.unlink(missing_ok=True)
+        else:
+            config.write_bytes(previous)
+
+
+def run_test(game_dir, shots_dir):
 
     failures = []
 
@@ -54,6 +66,13 @@ def main():
     proc, host, port = launch_test_game(game_dir)
     if proc is None:
         return 1
+    endpoint = read_endpoint_file(game_dir, expected_pid=proc.pid)
+    if endpoint is None or endpoint.protocol != "goldsrc-udp":
+        proc.stop()
+        print("FAIL: no fresh Native UDP endpoint")
+        return 1
+    if (endpoint.host, endpoint.port) != (host, port):
+        failures.append("endpoint metadata disagrees with banner")
 
     # Port file must exist for headless discovery.
     port_file = port_file_path(game_dir)
@@ -68,45 +87,70 @@ def main():
             failures.append("port file disagrees with banner")
 
     # wrong password must be rejected (config sets password=test123)
-    sock2 = socket.create_connection((host, port), timeout=10)
+    sock2 = rcon_client.RconConnection(host, port, "definitely-wrong", protocol=endpoint.protocol)
     try:
-        rcon_client.send_packet(sock2, 1, rcon_client.SERVERDATA_AUTH, b"definitely-wrong")
-        rid, rtype, _ = rcon_client.recv_packet(sock2)
-        auth_failed = (rtype == rcon_client.SERVERDATA_AUTH_RESPONSE and rid == -1)
-        if auth_failed:
-            print("[test] wrong-password rejection ok")
-        else:
-            failures.append(f"wrong password accepted (id={rid})")
+        sock2.open()
+        failures.append("wrong password accepted")
+    except PermissionError:
+        print("[test] wrong-password rejection ok")
     except Exception as e:
         failures.append(f"wrong-password test exception: {e}")
     finally:
         sock2.close()
 
-    # The wrong-password attempt got the server's one-strike disconnect; open a
-    # fresh connection for the authenticated commands.
-    sock = socket.create_connection((host, port), timeout=10)
+    sock = rcon_client.RconConnection(host, port, "test123", protocol=endpoint.protocol)
     try:
-        rcon_client.connect(sock, host, port, "test123")
+        sock.open()
         print("[test] auth ok")
 
-        out = rcon_client.run_command(sock, 101, "echo hello_from_rcon")
+        out = sock.command("echo hello_from_rcon")
         if "hello_from_rcon" in out:
             print("[test] echo ok")
         else:
             failures.append(f"echo output missing: {out!r}")
 
-        out = rcon_client.run_command(sock, 102, "version")
+        out = sock.command("version")
         if "Protocol version" in out:
             print(f"[test] version ok ({len(out)} chars)")
         else:
             failures.append(f"version output missing: {out!r}")
 
         # in-game screenshot: load a small map, give it time to render, shoot
-        out = rcon_client.run_command(sock, 103, "map osprey")
+        info = sock.command("cli.rconinfo")
+        if "protocol=goldsrc-udp status=ready" not in info or f"port={port}" not in info:
+            failures.append(f"rconinfo mismatch: {info}")
+        output = sock.command("cvarlist")
+        if len(output) <= 4096 or "Total CVars" not in output:
+            failures.append(f"long output incomplete ({len(output)} chars)")
+        print(f"[test] cvar list: {len(output)} chars")
+        out = sock.command("map osprey")
         print(f"[test] map osprey -> {out[:80]!r}")
         time.sleep(25)  # map load + a few rendered frames
-        out = rcon_client.run_command(sock, 104, "screenshot")
+        if "hello_active" not in sock.command("echo hello_active"):
+            failures.append("active-server echo failed")
+        current = read_endpoint_file(game_dir, expected_pid=proc.pid)
+        if current != endpoint:
+            failures.append("endpoint changed after map load")
+        out = sock.command("screenshot")
         print(f"[test] screenshot -> {out[:120]!r}")
+        sock.command("cli.usermsg reload")
+        time.sleep(0.3)
+        if "pending" not in sock.command("cli.usermsg"):
+            failures.append("usermsg state unavailable after schema reload")
+        sock.command("disconnect")
+        time.sleep(1)
+        if "hello_menu" not in sock.command("echo hello_menu"):
+            failures.append("menu RCON failed after disconnect")
+        cursor = proc.next_cursor
+        proc.send_stdin("echo hello_stdin_menu")
+        time.sleep(0.5)
+        if not any("hello_stdin_menu" in line for line in proc.lines_since(cursor).lines):
+            failures.append("stdin did not execute in menu")
+        sock.command("map osprey")
+        time.sleep(10)
+        if "hello_reload" not in sock.command("echo hello_reload"):
+            failures.append("RCON failed after second map load")
+        print("[test] schema reload, disconnect, menu stdin and second map ok")
     except Exception as e:
         failures.append(f"rcon exception: {e}")
     finally:
@@ -124,16 +168,23 @@ def main():
 
     # clean shutdown through RCON
     def rcon_quit():
-        s = socket.create_connection((host, port), timeout=10)
+        s = rcon_client.RconConnection(host, port, "test123", protocol=endpoint.protocol)
         try:
-            rcon_client.connect(s, host, port, "test123")
-            rcon_client.run_command(s, 200, "quit")
+            s.command("quit")
         finally:
             s.close()
 
     result = proc.stop(quit_command=rcon_quit, timeout=30)
     if result.killed:
         failures.append("game had to be killed after quit")
+    if result.exit_code != 0:
+        failures.append(f"game exited abnormally ({result.exit_code})")
+    metadata = Path(plugin_config_path(game_dir)).with_name("halflifecli.endpoint.json")
+    stopped = json.loads(metadata.read_text())
+    if stopped.get("status") != "stopped" or stopped.get("pid") != proc.pid:
+        failures.append("shutdown did not invalidate endpoint metadata")
+    if os.path.exists(port_file):
+        failures.append("shutdown left a stale port file")
     print(f"[test] game exit: {result.summary}")
 
     print("[test] last game stdout lines:")

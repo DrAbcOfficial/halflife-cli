@@ -30,8 +30,10 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: HalflifeCLI-dll
-          path: build/Release/HalflifeCLI.dll
+          name: HalflifeCLI
+          path: |
+            build/Release/HalflifeCLI.dll
+            build/metahook/gamedata/halflifecli/
           if-no-files-found: error
 
       - name: Package release zip
@@ -44,6 +46,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$stage/plugins", "$stage/configs/halflifecli/usermsgs" | Out-Null
           Copy-Item build/Release/HalflifeCLI.dll "$stage/plugins/"
           Copy-Item configs/usermsgs/*.toml "$stage/configs/halflifecli/usermsgs/"
+          Copy-Item -Recurse build/metahook/gamedata "$stage/gamedata"
           Compress-Archive -Path stage/metahook -DestinationPath "HalflifeCLI-${{ github.ref_name }}.zip"
 
       - name: Publish release

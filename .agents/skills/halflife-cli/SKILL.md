@@ -1,6 +1,6 @@
 ---
 name: halflife-cli
-description: Operate, automate, and debug Sven Co-op / Half-Life through the halflife-cli MetaHookSv plugin — piped-stdin console bridge, Source RCON server, and in-engine screenshots. Use whenever the task involves launching or driving the game headlessly, sending console commands (map, status, quit, cvars), capturing game screenshots (the `screenshot` command or the MCP `snapshot` tool) for vision-based verification, connecting over RCON, or diagnosing why the plugin, the CLI bridge, or the game misbehaves — even if the user just says "take a screenshot of the game", "run the map", or "test the plugin".
+description: Operate, automate, and debug Sven Co-op / Half-Life through the halflife-cli MetaHookSv plugin — piped-stdin console bridge, native GoldSrc UDP / legacy Source TCP RCON, and in-engine screenshots. Use whenever the task involves launching or driving the game headlessly, sending console commands (map, status, quit, cvars), capturing game screenshots (the `screenshot` command or the MCP `snapshot` tool) for vision-based verification, connecting over RCON, or diagnosing why the plugin, the CLI bridge, or the game misbehaves — even if the user just says "take a screenshot of the game", "run the map", or "test the plugin".
 ---
 
 # halflife-cli: drive Sven Co-op / Half-Life as a CLI program
@@ -8,7 +8,10 @@ description: Operate, automate, and debug Sven Co-op / Half-Life through the hal
 halflife-cli turns the game into a controllable process: the render window is
 hidden off-screen (still rendering, so screenshots keep working), every stdin
 line is executed as a console command, all console output is mirrored to
-stdout, and a Source RCON server listens on a random localhost port.
+stdout. Windows x86 Sven 8948/10257 uses native GoldSrc UDP RCON on the
+engine's server socket, including at the menu. Other engines use Source TCP.
+Sven requires MetaHook API 115+ and the manifest-validated gamedata catalog;
+missing symbols fail startup without falling back to TCP.
 
 ## Paths you will need
 
@@ -18,6 +21,7 @@ stdout, and a Source RCON server listens on a random localhost port.
 | Mod dir | `<game>\svencoop` |
 | Screenshots | `<game>\svencoop\screenshots\*.tga` (the engine `screenshot` command; format varies by mod) |
 | RCON port file | `<game>\svencoop\metahook\configs\halflifecli\halflifecli.port` |
+| RCON metadata | `<game>\svencoop\metahook\configs\halflifecli\halflifecli.endpoint.json` |
 | Config file | `<game>\svencoop\metahook\configs\halflifecli\halflifecli.toml` |
 | Game dir config | `<repo>\mcp\game_dir.txt` for the Python tooling, `<repo>\scripts\game_dir.txt` for the `.bat` launchers (one line each, machine-local, gitignored) |
 | RCON client / acceptance test / locator | `mcp\rcon_client.py`, `mcp\acceptance_test.py`, `mcp\find_game.py` in this repo |
@@ -68,12 +72,15 @@ always pass both.
 Then read stdout until you see the banner (allow up to ~120 s for game start):
 
 ```
-halflife-cli: RCON listening on 127.0.0.1:54321 (password: none|set)
+halflife-cli: RCON listening on 0.0.0.0:27015 (goldsrc-udp, password: none|set)
 ```
 
-The same port is written to `metahook/configs/halflifecli/halflifecli.port` (decimal port +
-newline). The port file may be stale from a previous run — prefer the banner,
-or re-read the file only after the banner appears.
+Read `halflifecli.endpoint.json` through `halflifecli.plugin_config.read_endpoint_file`.
+It validates ready status, protocol, PID and process creation time. Use its
+host/port (wildcard bindings map to 127.0.0.1), then perform an authenticated
+read-only probe. Never treat the banner or port file alone as ready. Missing
+metadata with a legacy port file means Source TCP only; invalid metadata must
+not fall back to that port or trigger protocol guessing.
 
 ## MCP tools (preferred)
 
@@ -120,28 +127,35 @@ while a server connection is up. `python mcp\usermsg_test.py
 
 ## Control channels
 
-**RCON (preferred for request/response).** Standard Source RCON protocol over
-TCP; responses are synchronous, one response per command, body capped at 4096
-bytes. From this repo:
+**RCON (preferred for request/response).** Select the protocol explicitly:
 
 ```bat
-python mcp\rcon_client.py 127.0.0.1 54321 "" "status" "echo hello"
+python mcp\rcon_client.py --protocol goldsrc-udp 127.0.0.1 27015 "" "status" "echo hello"
 ```
 
-Or in Python: `sys.path.insert(0, "<repo>/mcp"); import rcon_client`, then
-`rcon_client.connect(sock, host, port, password)` and
-`rcon_client.run_command(sock, rid, command)`.
+In Python use `RconConnection(host, port, password, protocol=endpoint.protocol)`;
+`open()` authenticates (`version` for UDP), `command(text)` executes, and
+`close()` releases the socket. The low-level `connect`/`run_command` helpers
+are TCP-only.
 
-- Empty configured password accepts any auth; a wrong password against a set
-  password gets `rid=-1` and the connection is closed on the first strike —
-  reconnect fresh rather than reusing the socket.
-- A response of `[halflife-cli] timed out waiting for command output` means the
-  engine did not produce output within 5 s (usually still loading or paused) —
-  retry after waiting.
-- An empty response body is normal for commands that print nothing (e.g. a
-  successful `map`); it is not an error.
-- Up to 4 concurrent connections are accepted; bind is localhost-only by
-  default.
+- Sven binding comes from engine `ip`/`ip_hostport`/`hostport`/`port` or `-port`.
+  Legacy `[rcon].bind` and `.port` are ignored. Read the actual endpoint.
+- The configured password initializes `rcon_password`; later cvar changes win.
+  Empty password permits only exact 127.0.0.1 or NA_LOOPBACK while CLI is running
+  and the allowlist permits the source. Other 127/8 sources are not local.
+- UDP uses native challenges, failure accounting and bans. Replies are native
+  redirected output, independent of the stdout capture plugin.
+- UDP requests are limited to 510 bytes after the OOB header. Replies use
+  <=1200 text bytes per datagram and double NUL termination. The client allows
+  1 MiB aggregate output, 100 ms silence and 10 s total time by default.
+  UDP has no sequence IDs or completion frame: loss, reordering, duplicates
+  and delayed-output truncation remain possible. Partial total timeouts raise
+  `PartialResponseError` with `partial_output`.
+- Never automatically retry an already-sent UDP command, particularly `map`
+  or `quit`. New commands use a new socket/challenge to isolate late replies.
+  An empty reply is valid. If quit gets no reply, wait for process exit first.
+- Other engines use `--protocol source-tcp`, retaining the 4096-byte response
+  limit, up to four connections, localhost default and prior password behavior.
 
 **stdin (fire-and-forget).** Every line piped to stdin is queued and executed
 on the next frame. There is no per-command response framing on stdin — output
@@ -276,10 +290,9 @@ optional):
 
 ```toml
 [rcon]
-port = 0                    # 0 = random available port
-bind = "127.0.0.1"
-password = ""               # empty = accept any auth
+password = ""               # Sven: empty permits allowed local sources only
 allowed_ips = ""
+# Other engines only: port = 0, bind = "127.0.0.1"
 
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
@@ -316,13 +329,13 @@ file appearance, and clean quit.
 |---|---|---|
 | No RCON banner within ~120 s | Plugin not loaded: missing DLL, x64 build, or not listed in `plugins.lst` | Check stdout for `halflife-cli ... loaded`; rebuild Win32; re-run `install_plugin.bat` |
 | `RCON failed to start (bind failed ...)` | Port conflict | Set a fixed `[rcon] port` in the ini, or kill the process holding it |
-| `warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled` | VGUI2Extension.dll not installed or not listed in `plugins.lst` (console capture depends on it) | Commands still run; RCON replies come back EMPTY. Install VGUI2Extension.dll into `svencoop\metahook\plugins\` (re-run `install_plugin.bat`, which also adds it to `plugins.lst`) |
+| `warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled` | Console capture plugin absent/incompatible | Sven UDP replies still work through native redirect; TCP output capture requires VGUI2Extension.dll. |
 | RCON auth fails immediately | Password mismatch | Check the ini; note one-strike disconnect — open a fresh connection |
 | Response is `timed out waiting for command output` | Engine busy (loading, paused) | Wait and resend; lengthen the wait after `map` |
 | Screenshot file never appears | Used `snapshot` (SteamScreenshots.dll uploads it to Steam, no local file), no map loaded, or window fully hidden (`cli.window 2`) pausing render | Use `screenshot`; load a map and wait; use off-screen mode 1; wait 1–2 s after the command |
 | Port file disagrees with banner | Stale file from a previous run | Trust the banner; the file is refreshed at startup |
 | Game ignores stdin commands | stdin not actually piped (launched via `start`/bat) | Launch `svencoop.exe` directly with piped stdio, as in the acceptance test |
-| Game does not exit after `quit` | RCON path broken | Send `quit\n` on stdin as fallback, wait ~30 s, then kill as last resort |
+| Game does not exit after `quit` | Shutdown stalled or command was not delivered | If UDP says the command may have executed, wait before an explicit stdin fallback. Inspect stacks; kill only a task-owned process as a last resort. |
 
 Source map (one src/ folder per responsibility), for code-level debugging:
 `src/core/plugins.cpp` (lifecycle, banner, export overrides),
@@ -331,7 +344,9 @@ Source map (one src/ folder per responsibility), for code-level debugging:
 `pfnClientCmd`, RCON response assembly — responses complete on the frame
 after execution), `src/console/output_capture.cpp` (console capture via
 VGUI2Extension GameConsole callbacks; no engine code hooks),
-`src/rcon/rcon_server.cpp` (protocol, auth, limits),
+`src/rcon/rcon_server.cpp` (backend selection, metadata, lifecycle),
+`src/rcon/sven_udp.cpp` (native Sven hooks, socket polling, redirect),
+`src/rcon/tcp_server.cpp` (legacy Source TCP),
 `src/window/window_manager.cpp` (hide modes, window-level input fallback),
 `src/input/engine_input.cpp` (`block_input` SDL filter / CGame WindowProc hook,
 `cli.trapkey` / `cli.trapmouse` injection), `src/input/input_lock.cpp`

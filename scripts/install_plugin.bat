@@ -21,6 +21,8 @@ set "PluginDataDir=%GameDir%\svencoop\metahook\configs\halflifecli"
 set "LegacyConfigDir=%GameDir%\svencoop\metahook\configs"
 set "SchemaSrc=%RepoDir%\configs\usermsgs"
 set "SchemaDst=%PluginDataDir%\usermsgs"
+set "GameDataSrc=%RepoDir%\build\metahook\gamedata\halflifecli"
+set "GameDataDst=%GameDir%\svencoop\metahook\gamedata\halflifecli"
 
 if not exist "%PluginSrc%" (
     echo ERROR: %PluginSrc% not found. Build first:
@@ -33,6 +35,10 @@ if not exist "%GameDir%\svencoop\metahook\plugins" (
     exit /b 1
 )
 
+:: Do not install a DLL whose required catalog is absent or incomplete.
+python "%RepoDir%\scripts\validate-gamedata.py" "%GameDataSrc%" --manifest "%RepoDir%\scripts\manifests\halflifecli.json" || exit /b 1
+if not exist "%GameDataDst%" mkdir "%GameDataDst%"
+copy /y "%GameDataSrc%\*.json" "%GameDataDst%\" >nul || exit /b 1
 copy /y "%PluginSrc%" "%PluginDst%" || exit /b 1
 
 :: All plugin data (halflifecli.toml, the port file, usermsg schemas) lives in

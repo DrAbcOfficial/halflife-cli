@@ -37,6 +37,8 @@ add_library(HalflifeCLI SHARED
 	src/input/engine_input.cpp
 	src/input/input_lock.cpp
 	src/rcon/rcon_server.cpp
+	src/rcon/tcp_server.cpp
+	src/rcon/sven_udp.cpp
 	src/window/window_manager.cpp
 	src/usermsg/usermsg_schema.cpp
 	src/usermsg/usermsg_decoder.cpp
@@ -84,3 +86,27 @@ set_target_properties(HalflifeCLI PROPERTIES
 	OUTPUT_NAME "HalflifeCLI"
 	PREFIX ""
 )
+
+# The same direct consumer workflow used by MetaHookSv plugins: synchronize
+# upstream snapshots, then enforce this plugin's required-symbol manifest.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(HALFLIFECLI_GAMEDATA_DIR "${PROJECT_BINARY_DIR}/metahook/gamedata/halflifecli")
+add_custom_target(HalflifeCLIGameData
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/sync-gamedata.py"
+        --manifest "${PROJECT_SOURCE_DIR}/scripts/manifests/halflifecli.json"
+        --target-dir "${HALFLIFECLI_GAMEDATA_DIR}" --temp-root "${PROJECT_BINARY_DIR}/gamedata-sync"
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/validate-gamedata.py"
+        "${HALFLIFECLI_GAMEDATA_DIR}" --manifest "${PROJECT_SOURCE_DIR}/scripts/manifests/halflifecli.json"
+    COMMENT "Synchronizing and validating HalflifeCLI gamedata" VERBATIM)
+add_dependencies(HalflifeCLI HalflifeCLIGameData)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(SvenRconPolicyTest tests/sven_policy_test.cpp)
+    target_compile_features(SvenRconPolicyTest PRIVATE cxx_std_20)
+    target_include_directories(SvenRconPolicyTest PRIVATE src "${METAHOOK_SOURCE_PATH}/include/HLSDK/common")
+    add_test(NAME SvenRconPolicy COMMAND SvenRconPolicyTest)
+    add_executable(UserMsgHookTest tests/usermsg_hook_test.cpp)
+    target_include_directories(UserMsgHookTest PRIVATE src)
+    add_test(NAME UserMsgHook COMMAND UserMsgHookTest)
+endif()

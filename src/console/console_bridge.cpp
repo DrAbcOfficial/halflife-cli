@@ -142,7 +142,17 @@ namespace ConsoleBridge
 		if (!g_bridge.running.exchange(false))
 			return;
 		if (g_bridge.stdinThread.joinable())
-			g_bridge.stdinThread.detach(); // blocked on getline; process exit will tear it down
+		{
+			// Cancellation can race the reader entering getline. Retry until it
+			// exits, then join before an engine restart can unload this DLL.
+			HANDLE reader = static_cast<HANDLE>(g_bridge.stdinThread.native_handle());
+			while (WaitForSingleObject(reader, 0) == WAIT_TIMEOUT)
+			{
+				CancelSynchronousIo(reader);
+				WaitForSingleObject(reader, 50);
+			}
+			g_bridge.stdinThread.join();
+		}
 		{
 			std::lock_guard<std::mutex> lock(g_bridge.respMutex);
 			g_bridge.pending.clear();
