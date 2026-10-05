@@ -57,8 +57,15 @@ for the distinction between static coverage and actual game runs.
 
 ## Install
 ```bat
-scripts\install_plugin.bat            [optional: path to "Sven Co-op"]
+scripts\install_plugin.bat            [optional: GameDir [AppId [ModDir]]]
 scripts\launch_cli.bat                [optional: extra launch args]
+```
+
+Sven Co-op (app `225840`, mod `svencoop`) is the default. Another GoldSrc app
+needs its Steam app id, and its mod directory when that is not the app default:
+
+```bat
+scripts\install_plugin.bat D:\CS3266 10 cstrike
 ```
 
 `launch_cli.bat` always enforces `-windowed -novid` (off-screen hiding needs
@@ -129,6 +136,14 @@ that turns the game into callable tools for MCP clients. It launches the game
 itself and stops managed games when the server shuts down. A game started
 elsewhere is attached to through validated endpoint metadata and an auth probe;
 server shutdown closes that connection without quitting the external game.
+
+`launch_game` targets Sven Co-op by default. Pass `appid`, and `mod` when it is
+not the app's default, to drive another app instead: `game_dir`, the mod
+directory and the launcher then come from `MetahookInstallerCLI`'s
+`-describe-target`, so `launch_game(appid=10, mod="cstrike",
+game_dir="D:\\CS3266")` starts `MetaHook_blob.exe -insecure -game cstrike
+-windowed -novid`. Screenshots, usermsg schemas and the RCON endpoint of every
+later call follow the mod directory of the target the session launched.
 
 Tools: `launch_game`, `game_status`, `run_command`, `find_cvar`,
 `send_key` / `send_mouse` (key and mouse-button events through the engine's

@@ -1,8 +1,9 @@
 """Reads the plugin's halflifecli.toml and RCON port file from a game install.
 
 Both files live under <game>/<mod>/metahook/configs/; paths are built by
-game_process. Everything here tolerates absence: a missing or broken file
-reads as "no setting", like the plugin's own compiled-in defaults.
+game_process from a GameTarget (or a bare game root, which means the Sven
+default). Everything here tolerates absence: a missing or broken file reads
+as "no setting", like the plugin's own compiled-in defaults.
 """
 
 import os
@@ -52,14 +53,14 @@ def process_start_filetime(pid):
         kernel.CloseHandle(handle)
 
 
-def read_endpoint_file(game_dir, expected_pid=None):
+def read_endpoint_file(target, expected_pid=None):
     """Validated metadata, or an explicitly Source-TCP legacy single-line file.
 
     Present but invalid/non-ready metadata is authoritative: never downgrade to
     a stale port file or guess the protocol by sending a command twice.
     Callers must still actively probe authentication before reporting ready.
     """
-    path = os.path.join(plugin_config_dir(game_dir), "halflifecli.endpoint.json")
+    path = os.path.join(plugin_config_dir(target), "halflifecli.endpoint.json")
     try:
         with open(path, encoding="utf-8") as stream:
             data = json.load(stream)
@@ -80,17 +81,17 @@ def read_endpoint_file(game_dir, expected_pid=None):
             return None
         return Endpoint(protocol, rcon_connect_host(bind), port, pid, start)
     except FileNotFoundError:
-        port = read_port_file(game_dir)
+        port = read_port_file(target)
         if port is not None:
-            return Endpoint("source-tcp", rcon_connect_host(plugin_rcon_bind(game_dir)), port)
+            return Endpoint("source-tcp", rcon_connect_host(plugin_rcon_bind(target)), port)
     except (OSError, ValueError, KeyError, TypeError, OverflowError):
         pass
     return None
 
 
-def read_plugin_config(game_dir):
+def read_plugin_config(target):
     """halflifecli.toml as parsed tables, or {} when absent/unreadable."""
-    path = plugin_config_path(game_dir)
+    path = plugin_config_path(target)
     try:
         with open(path, "rb") as f:
             return tomllib.load(f)
@@ -98,18 +99,18 @@ def read_plugin_config(game_dir):
         return {}
 
 
-def plugin_rcon_password(game_dir):
-    return read_plugin_config(game_dir).get("rcon", {}).get("password", "")
+def plugin_rcon_password(target):
+    return read_plugin_config(target).get("rcon", {}).get("password", "")
 
 
-def plugin_rcon_bind(game_dir):
-    return read_plugin_config(game_dir).get("rcon", {}).get("bind", "127.0.0.1")
+def plugin_rcon_bind(target):
+    return read_plugin_config(target).get("rcon", {}).get("bind", "127.0.0.1")
 
 
-def read_port_file(game_dir):
+def read_port_file(target):
     """RCON port from the plugin's port file, or None when absent/unparsable."""
     try:
-        with open(port_file_path(game_dir), "r", encoding="ascii", errors="ignore") as f:
+        with open(port_file_path(target), "r", encoding="ascii", errors="ignore") as f:
             port = int(f.read().strip())
             return port if 0 < port <= 65535 else None
     except (OSError, ValueError):

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from game_process import GameTarget
 from halflifecli.manager import Manager
 from halflifecli.plugin_config import Endpoint
 from test_udp_rcon import Server, print_packet
@@ -43,7 +44,8 @@ class ManagerUdpTests(unittest.TestCase):
             process = FakeProcess(endpoint.host, endpoint.port)
             manager = Manager()
             with patch.dict(os.environ, {"HALFLIFE_DISABLE_ATTACH": "1"}), \
-                 patch("halflifecli.manager.resolve_game_dir", return_value=(directory, "test")), \
+                 patch("halflifecli.manager.resolve_target",
+                       return_value=(GameTarget(directory, source="test"), None)), \
                  patch("halflifecli.manager.GameProcess", return_value=process), \
                  patch("halflifecli.manager.plugin_rcon_password", return_value="pw"), \
                  patch("halflifecli.manager.read_endpoint_file", return_value=endpoint) as metadata:
@@ -66,7 +68,8 @@ class ManagerUdpTests(unittest.TestCase):
             manager = Manager()
             endpoint = Endpoint("goldsrc-udp", "127.0.0.1", server.port, 123, "123456")
             with patch.dict(os.environ, {"HALFLIFE_DISABLE_ATTACH": "0"}), \
-                 patch("halflifecli.manager.resolve_game_dir", return_value=("test", "test")), \
+                 patch("halflifecli.manager.resolve_target",
+                       return_value=(GameTarget("test", source="test"), None)), \
                  patch("halflifecli.manager.read_endpoint_file", return_value=endpoint), \
                  patch("halflifecli.manager.plugin_rcon_password", return_value="pw"):
                 self.assertEqual("attached", manager.game_status().mode)
@@ -79,7 +82,8 @@ class ManagerUdpTests(unittest.TestCase):
             manager = Manager()
             endpoint = Endpoint("goldsrc-udp", "127.0.0.1", server.port, 123, "123456")
             with patch.dict(os.environ, {"HALFLIFE_DISABLE_ATTACH": "0"}), \
-                 patch("halflifecli.manager.resolve_game_dir", return_value=("test", "test")), \
+                 patch("halflifecli.manager.resolve_target",
+                       return_value=(GameTarget("test", source="test"), None)), \
                  patch("halflifecli.manager.read_endpoint_file", return_value=endpoint), \
                  patch("halflifecli.manager.plugin_rcon_password", return_value="pw"):
                 self.assertFalse(manager.game_status().running)

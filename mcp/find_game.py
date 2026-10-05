@@ -19,6 +19,9 @@ once to provision it. Nothing is hardcoded to a specific user's install path.
 
 Prints the resolved directory and exits 0, or exits 1 with guidance.
 
+`resolve_target` is the API for callers that must start the game: it also
+returns which mod to run and which launcher to start.
+
 Usage:
   python mcp/find_game.py                     # Sven Co-op (default)
   python mcp/find_game.py --dir X             # validate one candidate
@@ -35,12 +38,20 @@ import re
 import subprocess
 import sys
 
+from game_process import GameTarget
+
 MARKER = "svencoop.exe"
 CONFIG_NAME = "game_dir.txt"
 MOD_NAME = "Sven Co-op"
 DEFAULT_APPID = 225840  # Sven Co-op; other apps go through MetahookInstallerCLI
 CLI_ENV_VARIABLE = "HALFLIFECLI_INSTALLER_CLI_EXECUTABLE"
 CLI_TIMEOUT_S = 30
+GAME_ARG = "-game"
+# How MetahookInstallerCLI's own shortcut and the CMake LaunchGame target start a
+# described install: the launcher it reports is the generic MetaHook loader (or
+# MetaHook.exe on SDL engines), which needs the mod named explicitly. The Sven
+# fast path needs none of this — svencoop.exe defaults to its own mod.
+DESCRIBED_LAUNCH_ARGS = ("-insecure", GAME_ARG)
 
 
 def is_game_dir(path):
@@ -197,59 +208,82 @@ def cli_describe_target(cli, appid, gamedir=None, moddir=None):
     return description, None
 
 
-def resolve_game_dir(explicit=None, appid=None, mod=None):
-    """Return (path, source) on success or (None, reason) on failure.
+def _resolve_sven_directory():
+    """(directory, source) from the local Sven chain, or (None, reason)."""
+    configured = configured_candidates()
+    for source, value in configured:
+        if is_game_dir(value):
+            return os.path.normpath(value), source
+    for source, value in configured:
+        print("note: %s points to %r, no %s there; searching..." %
+              (source, value, MARKER), file=sys.stderr)
+    for cand in dedupe(search_candidates()):
+        if is_game_dir(cand):
+            return os.path.normpath(cand), "search"
+    return None, "no directory containing %s was found" % MARKER
 
-    Sven Co-op (the default app) keeps the fast local chain. Any other app, or
-    a Sven lookup that found nothing locally, is resolved through
-    MetahookInstallerCLI.
 
-    An explicit request is authoritative: if it names a directory without
-    svencoop.exe, fail instead of silently falling back to other sources.
+def resolve_target(explicit=None, appid=None, mod=None):
+    """Return (GameTarget, None) on success or (None, reason) on failure.
+
+    Sven Co-op (the default app) keeps the fast local chain and needs no
+    launcher description: its launcher is <directory>/svencoop.exe and its mod
+    is svencoop.
+
+    Every other app is described by MetahookInstallerCLI, which reports the mod
+    directory and the launcher alongside the game directory. An explicit
+    directory is still passed to it: the mod and the launcher cannot be derived
+    from the directory alone, so a non-Sven target needs the CLI even when the
+    install path is already known.
+
+    An explicit directory is otherwise authoritative: for the Sven default it
+    fails rather than silently falling back to other sources when it holds no
+    svencoop.exe.
     """
     selected_appid = DEFAULT_APPID if appid is None else int(appid)
+    value = explicit.strip().strip('"') if explicit is not None else None
 
-    if explicit is not None:
-        value = explicit.strip().strip('"')
-        if selected_appid == DEFAULT_APPID:
-            if is_game_dir(value):
-                return os.path.normpath(value), "--dir"
-            return None, "explicit path was given but no %s under %r" % (MARKER, value)
-        if os.path.isdir(value):
-            return os.path.normpath(value), "--dir"
-        return None, "explicit path was given but %r is not a directory" % (value,)
-
-    # The env/config chain and the marker search are Sven-specific: their marker
-    # is svencoop.exe and their configured paths are Sven installs.
     if selected_appid == DEFAULT_APPID:
-        configured = configured_candidates()
-        for source, value in configured:
-            if is_game_dir(value):
-                return os.path.normpath(value), source
-        for source, value in configured:
-            print("note: %s points to %r, no %s there; searching..." %
-                  (source, value, MARKER), file=sys.stderr)
-        for cand in dedupe(search_candidates()):
-            if is_game_dir(cand):
-                return os.path.normpath(cand), "search"
+        if value is None:
+            directory, source = _resolve_sven_directory()
+            if directory is None:
+                return None, source
+            return GameTarget(directory, source=source), None
+        if is_game_dir(value):
+            return GameTarget(os.path.normpath(value), source="--dir"), None
+        return None, "explicit path was given but no %s under %r" % (MARKER, value)
 
-    # Anything unresolved (every non-Sven app, and Sven when nothing local
-    # matched) goes through MetahookInstallerCLI, which finds the Steam install.
     cli = find_installer_cli()
     if not cli:
-        if selected_appid == DEFAULT_APPID:
-            return None, "no directory containing %s was found" % MARKER
         return None, (
             "app %d needs MetahookInstallerCLI, which was not found. Set %s or "
             "configure CMake with -DHALFLIFECLI_ENABLE_LAUNCH_GAME=ON" %
             (selected_appid, CLI_ENV_VARIABLE))
-    description, reason = cli_describe_target(cli, selected_appid, moddir=mod)
+    if value is not None and not os.path.isdir(value):
+        return None, "explicit path was given but %r is not a directory" % (value,)
+    description, reason = cli_describe_target(cli, selected_appid, gamedir=value, moddir=mod)
     if description is None:
         return None, reason
     game_dir = os.path.normpath(description["GameDirectory"])
+    mod_dir_name = description.get("ModDirectory") or ""
+    if not mod_dir_name:
+        return None, "MetahookInstallerCLI did not report a ModDirectory"
     print("note: MetahookInstallerCLI resolved app %d -> %s (mod %s)" %
-          (selected_appid, game_dir, description.get("ModDirectory", "?")), file=sys.stderr)
-    return game_dir, "MetahookInstallerCLI"
+          (selected_appid, game_dir, mod_dir_name), file=sys.stderr)
+    return GameTarget(
+        game_dir,
+        mod=mod_dir_name,
+        launcher=description.get("LauncherPath") or "",
+        launch_args=(*DESCRIBED_LAUNCH_ARGS, mod_dir_name),
+        source="MetahookInstallerCLI"), None
+
+
+def resolve_game_dir(explicit=None, appid=None, mod=None):
+    """Return (game directory, source) — the directory-only view of resolve_target."""
+    target, reason = resolve_target(explicit, appid, mod)
+    if target is None:
+        return None, reason
+    return target.directory, target.source
 
 
 def main():

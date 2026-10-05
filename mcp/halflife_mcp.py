@@ -59,7 +59,10 @@ DEFAULT_IMAGE_MAX_EDGE = 1280
 
 INSTRUCTIONS = (
     "Drive Sven Co-op / Half-Life through halflife-cli. "
-    "Call launch_game first. After `map <name>`, use read_console to wait for "
+    "Call launch_game first: Sven Co-op (225840) is found without help, any "
+    "other app needs its appid (10 Counter-Strike, 70 Half-Life) so "
+    "MetahookInstallerCLI can report its mod and launcher. After `map <name>`, "
+    "use read_console to wait for "
     "the load to finish before snapshot. Before snapshot, make sure a map is "
     "loaded and rendering (the main menu does not render the world). Verify "
     "cvar/command names with find_cvar before running them. Call quit_game when "
@@ -98,10 +101,16 @@ mcp = MCPServer("halflife", instructions=INSTRUCTIONS, lifespan=lifespan)
 def launch_game(
     extra_args: Annotated[list[str], Field(description="Extra game launch arguments (windowed and -novid are always added)", default_factory=list)],
     game_dir: Annotated[str | None, Field(description="Game install directory; resolved automatically when omitted")] = None,
+    appid: Annotated[int | None, Field(description="Steam app ID (225840 Sven Co-op, 10 Counter-Strike, 70 Half-Life). Any other app is described by MetahookInstallerCLI", ge=1)] = None,
+    mod: Annotated[str | None, Field(description="Mod directory under the game root, e.g. cstrike; empty uses the app's default mod")] = None,
     timeout_s: Annotated[int, Field(description="Seconds to wait for the RCON banner", ge=1, le=LAUNCH_TIMEOUT_CAP_S)] = BANNER_TIMEOUT_S,
 ) -> GameStatus:
-    """Launch the game (if not already running) and wait for it to be drivable."""
-    return manager.launch_game(extra_args, game_dir, timeout_s)
+    """Launch the game (if not already running) and wait for it to be drivable.
+
+    Sven Co-op is the default target. Pass the appid of another GoldSrc app
+    (and optionally its mod directory) to launch that one instead.
+    """
+    return manager.launch_game(extra_args, game_dir, timeout_s, appid, mod)
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))

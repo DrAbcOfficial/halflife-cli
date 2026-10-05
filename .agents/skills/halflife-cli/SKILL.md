@@ -17,12 +17,12 @@ missing symbols fail startup without falling back to TCP.
 
 | What | Where |
 |---|---|
-| Game install | resolved externally — see "Resolve the game directory first"; a valid install contains `svencoop.exe` |
-| Mod dir | `<game>\svencoop` |
-| Screenshots | `<game>\svencoop\screenshots\*.tga` (the engine `screenshot` command; format varies by mod) |
-| RCON port file | `<game>\svencoop\metahook\configs\halflifecli\halflifecli.port` |
-| RCON metadata | `<game>\svencoop\metahook\configs\halflifecli\halflifecli.endpoint.json` |
-| Config file | `<game>\svencoop\metahook\configs\halflifecli\halflifecli.toml` |
+| Game install | resolved externally — see "Resolve the game directory first"; the default Sven Co-op install contains `svencoop.exe` |
+| Mod dir | `<game>\svencoop` for Sven Co-op; another GoldSrc app uses its own mod dir (e.g. `<game>\cstrike`) and starts through `MetaHook_blob.exe` |
+| Screenshots | `<game>\<mod>\screenshots\*.tga` (the engine `screenshot` command; format varies by mod) |
+| RCON port file | `<game>\<mod>\metahook\configs\halflifecli\halflifecli.port` |
+| RCON metadata | `<game>\<mod>\metahook\configs\halflifecli\halflifecli.endpoint.json` |
+| Config file | `<game>\<mod>\metahook\configs\halflifecli\halflifecli.toml` |
 | Game dir config | `<repo>\mcp\game_dir.txt` for the Python tooling, `<repo>\scripts\game_dir.txt` for the `.bat` launchers (one line each, machine-local, gitignored) |
 | RCON client / acceptance test / locator | `mcp\rcon_client.py`, `mcp\acceptance_test.py`, `mcp\find_game.py` in this repo |
 | MCP server | `mcp\halflife_mcp.py` (stdio; run with `uv run --script`), registered via `.mcp.json` |
@@ -38,10 +38,18 @@ of every task, before launching the game or running any script:
    `steamapps\libraryfolders.vdf` libraries → common install layouts) and
    prints the first directory containing `svencoop.exe`. Pass `--dir <path>`
    to merely validate a candidate.
-3. If it exits non-zero, ask the user for the install path — do not guess.
+3. For any app other than Sven Co-op, pass its Steam app id and, when it is
+   not the app default, its mod: `python mcp\find_game.py --appid 10 --mod
+   cstrike`. Resolution then goes through `MetahookInstallerCLI`, which knows
+   the app's default mod and also reports the launcher; the printed path is
+   still the game root. Pass the same appid/mod to `launch_game` (see "MCP
+   tools"): a non-Sven target starts its described launcher
+   (`MetaHook_blob.exe -insecure -game <mod>`), never `svencoop.exe`.
+4. If it exits non-zero, ask the user for the install path — do not guess.
    Then:
-   - Verify the answer: the directory must contain `svencoop.exe` (and
-     `svencoop\metahook\` if the plugin still needs installing).
+   - Verify the answer: a Sven install must contain `svencoop.exe` (and
+     `svencoop\metahook\` if the plugin still needs installing); another app
+     must contain its mod's `liblist.gam` and the MetaHook launcher.
    - Persist it as a single line in `mcp\game_dir.txt` so later sessions
      never need to ask again:
 
@@ -69,6 +77,20 @@ proc = subprocess.Popen(
 `-novid` skips the intro. The plugin enforces nothing on your behalf here —
 always pass both.
 
+For any app other than Sven Co-op, let the resolved target build the command
+line instead of hardcoding the executable: `build_game_argv` starts the
+launcher MetahookInstallerCLI reported, with the mod it named.
+
+```python
+from find_game import resolve_target
+from game_process import build_game_argv
+
+target, reason = resolve_target(game_dir, appid=10, mod="cstrike")  # appid/mod: non-Sven only
+proc = subprocess.Popen(
+    build_game_argv(target), cwd=target.directory,
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+```
+
 Then read stdout until you see the banner (allow up to ~120 s for game start):
 
 ```
@@ -91,7 +113,7 @@ via `read_console`. Tool ↔ manual mapping:
 
 | MCP tool | Replaces |
 |---|---|
-| `launch_game` | the `subprocess.Popen` + banner-wait launch loop |
+| `launch_game` | the `subprocess.Popen` + banner-wait launch loop (pass `appid`/`mod` for a non-Sven app; Sven Co-op is the default) |
 | `run_command` | `rcon_client.py` / `run_command` |
 | `find_cvar` | `cli.find <name>` over RCON |
 | `send_key` / `send_mouse` | `cli.trapkey` / `cli.trapmouse` over RCON (see "Sending keyboard and mouse input") |

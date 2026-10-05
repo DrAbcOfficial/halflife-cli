@@ -438,7 +438,7 @@ class FakeGame:
 def _attach_fake(manager, fake):
     """Point a Manager at a fake game without triggering resolve/port files."""
     manager._proc = fake
-    manager._game_dir = tempfile.gettempdir()
+    manager._target = game_process.GameTarget(tempfile.gettempdir())
     manager._host = fake.host
     manager._port = fake.port
     manager._password = ""

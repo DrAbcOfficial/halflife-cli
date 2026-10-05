@@ -12,6 +12,7 @@ class GameStatus(BaseModel):
     protocol: str | None = None
     exit_code: int | None = None
     game_dir: str | None = None
+    mod: str | None = None  # mod directory name, e.g. svencoop / cstrike
 
 
 class ConsoleWindow(BaseModel):

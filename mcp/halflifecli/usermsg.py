@@ -60,18 +60,18 @@ def parse_usermsg_events(text):
     return events, newest, more
 
 
-def usermsg_schema_dir(game_dir):
+def usermsg_schema_dir(target):
     """Same folder the plugin loads schemas from (configs/halflifecli/usermsgs/)."""
-    return os.path.join(plugin_config_dir(game_dir), "usermsgs")
+    return os.path.join(plugin_config_dir(target), "usermsgs")
 
 
-def usermsg_schema_file(game_dir):
+def usermsg_schema_file(target):
     """Schema file name the plugin loads: [usermsg] file, else <moddir>.toml."""
-    override = read_plugin_config(game_dir).get("usermsg", {}).get("file", "")
-    return override or (os.path.basename(mod_dir(game_dir)) + ".toml")
+    override = read_plugin_config(target).get("usermsg", {}).get("file", "")
+    return override or (os.path.basename(mod_dir(target)) + ".toml")
 
 
-def load_usermsg_schema(game_dir):
+def load_usermsg_schema(target):
     """Merged UserMsgMessages for the game's schema, following extends chains.
 
     Reads the same files the plugin loads (mod/metahook/configs/halflifecli/usermsgs/);
@@ -82,8 +82,8 @@ def load_usermsg_schema(game_dir):
     usermsg_schema.cpp).
     Raises ToolError when the schema file is missing or unparsable.
     """
-    schema_dir = usermsg_schema_dir(game_dir)
-    root_file = usermsg_schema_file(game_dir)
+    schema_dir = usermsg_schema_dir(target)
+    root_file = usermsg_schema_file(target)
 
     merged = {}
     coord_size = 2
@@ -122,11 +122,11 @@ def load_usermsg_schema(game_dir):
         messages=[merged[name] for name in sorted(merged)])
 
 
-def sync_usermsg_schemas(game_dir, source_dir):
+def sync_usermsg_schemas(target, source_dir):
     """Copy the repo's schema TOMLs into the game's usermsgs dir. Returns count."""
-    os.makedirs(usermsg_schema_dir(game_dir), exist_ok=True)
+    os.makedirs(usermsg_schema_dir(target), exist_ok=True)
     n = 0
     for path in glob.glob(os.path.join(source_dir, "*.toml")):
-        shutil.copy2(path, usermsg_schema_dir(game_dir))
+        shutil.copy2(path, usermsg_schema_dir(target))
         n += 1
     return n
