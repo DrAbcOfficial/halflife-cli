@@ -38,6 +38,25 @@ else()
 endif()
 set(cli_command "${stage}/MetahookInstallerCLI.exe")
 
+set(_mod_dir "${game_directory}/${game_mod}")
+set(_configs_dir "${_mod_dir}/metahook/configs")
+set(_plugin_data_dir "${_configs_dir}/halflifecli")
+
+# halflifecli.toml holds user settings and is shipped in the payload, so it must
+# not be overwritten by a redeploy. Migrate a legacy top-level copy first, then
+# if the destination still exists keep it by excluding it from staging. The port
+# file is merely stale and is rewritten by the plugin at startup.
+file(MAKE_DIRECTORY "${_plugin_data_dir}")
+if(EXISTS "${_configs_dir}/halflifecli.toml" AND NOT EXISTS "${_plugin_data_dir}/halflifecli.toml")
+    file(RENAME "${_configs_dir}/halflifecli.toml" "${_plugin_data_dir}/halflifecli.toml")
+    message(STATUS "Migrated halflifecli.toml into ${_plugin_data_dir}")
+endif()
+set(_preserve_config FALSE)
+if(EXISTS "${_plugin_data_dir}/halflifecli.toml")
+    set(_preserve_config TRUE)
+    message(STATUS "Keeping the existing ${_plugin_data_dir}/halflifecli.toml")
+endif()
+
 # Only remove the private staging payload; never clean the game's directory.
 file(MAKE_DIRECTORY "${stage}/install/output")
 file(REAL_PATH "${binary_dir}" binary_real)
@@ -51,6 +70,9 @@ if(EXISTS "${payload_real}")
     message(FATAL_ERROR "Cannot clear the private DeployGame payload (a file may be locked): ${payload_real}")
 endif()
 run_checked("${CMAKE_COMMAND}" --install "${binary_dir}" --config "${CONFIG}" --prefix "${payload_real}")
+if(_preserve_config)
+    file(REMOVE "${payload_real}/svencoop/metahook/configs/halflifecli/halflifecli.toml")
+endif()
 
 # Verify the CLI still resolves to the launcher we configured against.
 set(target_args -appid "${game_appid}" -gamedir "${game_directory}" -moddir "${game_mod}")
@@ -69,18 +91,7 @@ endif()
 
 run_checked(${cli_command} ${target_args})
 
-set(_mod_dir "${game_directory}/${game_mod}")
-set(_configs_dir "${_mod_dir}/metahook/configs")
-set(_plugin_data_dir "${_configs_dir}/halflifecli")
-
-# Migrate an install from the pre-halflifecli layout (files at the top level of
-# metahook/configs). The TOML holds user settings, so it must not be dropped;
-# the port file is merely stale and is rewritten at every plugin start.
-file(MAKE_DIRECTORY "${_plugin_data_dir}")
-if(EXISTS "${_configs_dir}/halflifecli.toml" AND NOT EXISTS "${_plugin_data_dir}/halflifecli.toml")
-    file(RENAME "${_configs_dir}/halflifecli.toml" "${_plugin_data_dir}/halflifecli.toml")
-    message(STATUS "Migrated halflifecli.toml into ${_plugin_data_dir}")
-endif()
+# The port file is stale after the payload swap; drop it so the plugin rewrites it.
 if(EXISTS "${_configs_dir}/halflifecli.port")
     file(RENAME "${_configs_dir}/halflifecli.port" "${_plugin_data_dir}/halflifecli.port")
 endif()

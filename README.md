@@ -328,15 +328,28 @@ display_channels = "all"    # channels echoed to the console while recorded (com
 
 ## CI
 
-[`.github/workflows/build.yml`](.github/workflows/build.yml) builds the plugin
-on every push (`windows-latest`, Win32) and uploads the DLL as a workflow
-artifact. Pushing a `v*` tag additionally publishes a GitHub Release with
-`HalflifeCLI-<tag>.zip` — the plugin DLL, required gamedata and usermsg schemas, laid out
-as the game directory expects (`metahook/plugins/`,
-`metahook/gamedata/halflifecli/`, `metahook/configs/halflifecli/usermsgs/`), so extracting it into `svencoop/`
-installs everything:
+Both workflows build the plugin on `windows-latest` (Win32) and package a 7z
+that mirrors the game directory, using the same `cmake --install` layout the
+`DeployGame` target uses:
+
+- [`.github/workflows/livebuild.yml`](.github/workflows/livebuild.yml) — every
+  push to `main`/`dev` and every PR; uploads `HalflifeCLI-windows-x86.7z` as a
+  workflow artifact.
+- [`.github/workflows/msbuild.yml`](.github/workflows/msbuild.yml) — `v*` tags;
+  publishes a GitHub Release with the same 7z.
+
+The archive contains the plugin DLL, its PDB, the `halflifecli.toml` config
+template, the usermsg schemas and the required gamedata
+(`svencoop/metahook/{plugins,configs/halflifecli,gamedata/halflifecli}`), so
+extracting it into a Sven Co-op root installs everything:
 
 ```bat
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+The gamedata catalog is Sven-only: the native UDP RCON backend is built on
+Sven's `sv.dll` RCON symbols, which do not exist in the `hl-*`/`cstrike-*`
+GoldSrc snapshots. Half-Life and Counter-Strike load the plugin without
+gamedata and use the independent Source TCP RCON backend (see
+`src/rcon/rcon_server.cpp`).

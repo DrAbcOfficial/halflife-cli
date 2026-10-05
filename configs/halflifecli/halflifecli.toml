@@ -1,0 +1,31 @@
+# HalflifeCLI plugin configuration.
+#
+# Every key is optional: a missing file (or key) keeps the compiled-in default,
+# which targets unattended automation. Boolean keys must be TOML true/false;
+# 0/1 and other types are reported and ignored, leaving the default in place.
+# The file is read once at plugin load, so a restart is required after editing.
+
+[rcon]
+# Non-Sven Source TCP backend only. Sven uses the engine's native UDP socket and
+# takes its port from the engine ip/hostport/port cvars or -port; these keys are
+# deprecated/ignored there.
+# port = 0                  # 0 = pick a random available port
+# bind = "127.0.0.1"        # localhost only by default
+password = ""               # empty = accept any password (the bind address still gates)
+allowed_ips = ""            # comma-separated IPv4 allowlist; empty = address not further restricted
+
+[cli]
+hide_window = 1             # 0 = off, 1 = move off-screen (default), 2 = ShowWindow(SW_HIDE)
+developer = 1               # set the "developer" cvar so verbose engine output flows
+capture = true              # capture console output via VGUI2Extension GameConsole callbacks
+console = true              # CLI console bridge: stdin commands + stdout mirror
+block_input = false         # true = ignore the physical keyboard/mouse (cli.blockinput toggles at runtime)
+input_lock = false          # true = stop the mouse from driving the view (cli.inputlock toggles at runtime)
+console_topmost = false     # keep the CLI console window always on top
+rcon = true                 # false leaves native engine networking/authentication untouched
+
+[usermsg]
+enabled = true              # hook + decode server user messages
+file = ""                   # schema file; empty = "<gamedir>.toml" in this folder's usermsgs/
+max_string = 64             # truncate decoded strings longer than this
+display_channels = "all"    # channels echoed while recorded; "all" = wildcard, empty = record only

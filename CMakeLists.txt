@@ -97,6 +97,10 @@ set_target_properties(HalflifeCLI PROPERTIES
 # The PDB is what makes the LaunchGame debugger usable, so it ships with the DLL.
 install(TARGETS HalflifeCLI RUNTIME DESTINATION svencoop/metahook/plugins)
 install(FILES "$<TARGET_PDB_FILE:HalflifeCLI>" DESTINATION svencoop/metahook/plugins)
+# Configuration template plus the usermsg schemas, both under the plugin's own
+# config folder.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/configs/halflifecli/halflifecli.toml"
+	DESTINATION svencoop/metahook/configs/halflifecli)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/configs/usermsgs/"
 	DESTINATION svencoop/metahook/configs/halflifecli/usermsgs)
 
