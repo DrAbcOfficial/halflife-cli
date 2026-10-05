@@ -64,6 +64,9 @@ scripts\launch_cli.bat                [optional: extra launch args]
 `launch_cli.bat` always enforces `-windowed -novid` (off-screen hiding needs
 windowed mode).
 
+`install_plugin.bat` now configures and drives the CMake `DeployGame` target, so
+the batch and the Visual Studio workflow share one deployment implementation.
+
 No game path is hardcoded: scripts resolve the game directory from (in order)
 their command-line argument, the `GAME_DIR` environment variable, and a
 machine-local, gitignored `game_dir.txt` — `scripts\game_dir.txt` for the
@@ -71,6 +74,38 @@ machine-local, gitignored `game_dir.txt` — `scripts\game_dir.txt` for the
 `python mcp\find_game.py` to locate the install automatically (Steam
 registry, `libraryfolders.vdf`, common layouts) or to validate a candidate
 with `--dir <path>`; when nothing is found, configure the path as above.
+
+### Visual Studio one-click deploy + debug
+
+Instead of `install_plugin.bat` + manual attach, CMake can add a `LaunchGame`
+target that builds the plugin, deploys it into the game and starts Sven Co-op
+under the debugger (F5):
+
+```bat
+cmake -S . -B build -A Win32 -DHALFLIFECLI_ENABLE_LAUNCH_GAME=ON
+```
+
+Open `build\halflife-cli.sln`, select `LaunchGame` as the startup project and
+press F5. This builds `HalflifeCLI`, runs `DeployGame` (which stages the install
+rules and deploys them with `MetahookInstallerCLI`, then registers the plugin in
+`plugins.lst`), and launches `svencoop.exe` with `-insecure -game svencoop
+-windowed -novid`. The PDB is deployed alongside the DLL, so breakpoints
+resolve.
+
+The game directory is resolved by `MetahookInstallerCLI` (Steam layout), not
+hardcoded. All settings are cache variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HALFLIFECLI_GAME_APPID` | `225840` | Steam app ID (Sven Co-op) |
+| `HALFLIFECLI_GAME_DIRECTORY` | *(empty)* | Game root; empty lets the CLI find the Steam install |
+| `HALFLIFECLI_GAME_MOD` | *(empty)* | Mod directory; empty uses the app default |
+| `HALFLIFECLI_GAME_ARGUMENTS` | *(empty)* | Extra game arguments appended to the defaults |
+| `HALFLIFECLI_INSTALLER_CLI_EXECUTABLE` | *(empty)* | Use an existing `MetahookInstallerCLI.exe` instead of downloading one |
+
+Deployment is plugin-only: it requires MetaHook to be installed in the game
+already (as `install_plugin.bat` does) and never replaces the launcher or
+`plugins.lst`'s existing entries.
 
 ## MCP server
 

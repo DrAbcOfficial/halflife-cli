@@ -78,6 +78,11 @@ if(MSVC)
 		NOMINMAX
 		_CRT_SECURE_NO_WARNINGS
 	)
+	# Emit a program database in every configuration so the DeployGame/LaunchGame
+	# workflow can resolve symbols in the running game; the PDB ships next to the
+	# DLL (see the install rules below).
+	target_compile_options(HalflifeCLI PRIVATE /Zi)
+	target_link_options(HalflifeCLI PRIVATE /DEBUG)
 endif()
 
 target_link_libraries(HalflifeCLI PRIVATE ws2_32 user32)
@@ -86,6 +91,14 @@ set_target_properties(HalflifeCLI PROPERTIES
 	OUTPUT_NAME "HalflifeCLI"
 	PREFIX ""
 )
+
+# Install layout consumed by MetahookInstallerCLI's payload convention: paths are
+# relative to the game root so the DeployGame staging prefix maps 1:1 onto it.
+# The PDB is what makes the LaunchGame debugger usable, so it ships with the DLL.
+install(TARGETS HalflifeCLI RUNTIME DESTINATION svencoop/metahook/plugins)
+install(FILES "$<TARGET_PDB_FILE:HalflifeCLI>" DESTINATION svencoop/metahook/plugins)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/configs/usermsgs/"
+	DESTINATION svencoop/metahook/configs/halflifecli/usermsgs)
 
 # The same direct consumer workflow used by MetaHookSv plugins: synchronize
 # upstream snapshots, then enforce this plugin's required-symbol manifest.
@@ -100,6 +113,11 @@ add_custom_target(HalflifeCLIGameData
     COMMENT "Synchronizing and validating HalflifeCLI gamedata" VERBATIM)
 add_dependencies(HalflifeCLI HalflifeCLIGameData)
 
+# Ship the synchronized gamedata catalog; the target above produces it before
+# HalflifeCLI builds, so it exists by the time the install rule runs.
+install(DIRECTORY "${HALFLIFECLI_GAMEDATA_DIR}/"
+	DESTINATION svencoop/metahook/gamedata/halflifecli OPTIONAL)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(SvenRconPolicyTest tests/sven_policy_test.cpp)
@@ -109,4 +127,15 @@ if(BUILD_TESTING)
     add_executable(UserMsgHookTest tests/usermsg_hook_test.cpp)
     target_include_directories(UserMsgHookTest PRIVATE src)
     add_test(NAME UserMsgHook COMMAND UserMsgHookTest)
+endif()
+
+# Optional Visual Studio F5 workflow: build HalflifeCLI, deploy it into the game
+# and launch svencoop.exe under the debugger. Off by default so CI and ordinary
+# builds never require a game install. The switch lives here (before the module
+# include) so it is visible in cmake-gui even when the workflow is disabled.
+option(HALFLIFECLI_ENABLE_LAUNCH_GAME
+    "Add the Visual Studio build/deploy/debug targets (requires a game install)" OFF)
+if(HALFLIFECLI_ENABLE_LAUNCH_GAME)
+    include(cmake/LaunchGame.cmake)
+    halflifecli_add_launch_game()
 endif()
