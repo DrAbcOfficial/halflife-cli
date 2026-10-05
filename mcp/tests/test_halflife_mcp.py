@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -30,7 +31,8 @@ import game_process
 import rcon_client
 import halflife_mcp
 from game_process import BANNER_RE, GameProcess
-from halflifecli.manager import Manager
+from halflifecli import manager as manager_module
+from halflifecli.manager import DEFAULT_COMMAND_MAX_LINES, Manager, truncate_output
 from halflifecli.plugin_config import read_plugin_config
 from halflifecli.screenshot import find_new_screenshot, shot_to_png
 from halflifecli.usermsg import (
@@ -39,6 +41,7 @@ from halflifecli.usermsg import (
     parse_usermsg_status,
     sync_usermsg_schemas,
 )
+from mcp.server.mcpserver.exceptions import ToolError
 
 os.environ["HALFLIFE_DISABLE_ATTACH"] = "1"
 
@@ -248,6 +251,98 @@ class TestUserMsgParsers(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Command output limits
+# ---------------------------------------------------------------------------
+
+class TestTruncateOutput(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self._log_dir = patch.object(manager_module, "COMMAND_LOG_DIR", self._tmp.name)
+        self._log_dir.start()
+        self.addCleanup(self._log_dir.stop)
+
+    def test_negative_keeps_every_line(self):
+        text = "\n".join(f"line{i}" for i in range(50))
+        self.assertEqual(text, truncate_output(text, -1, "head", "cmd"))
+        self.assertEqual([], os.listdir(self._tmp.name))
+
+    def test_under_or_at_cap_is_unchanged(self):
+        text = "a\nb\nc"
+        for max_lines in (3, 5):
+            with self.subTest(max_lines=max_lines):
+                self.assertEqual(text, truncate_output(text, max_lines, "head", "cmd"))
+        self.assertEqual([], os.listdir(self._tmp.name))
+
+    def test_bad_keep_raises(self):
+        for max_lines in (-1, 1):
+            with self.subTest(max_lines=max_lines), self.assertRaises(ToolError):
+                truncate_output("a\nb", max_lines, "middle", "cmd")
+        self.assertEqual([], os.listdir(self._tmp.name))
+
+    def test_head_keeps_start_and_writes_full_log(self):
+        text = "\n".join(f"line{i}" for i in range(100))
+        lines = truncate_output(text, 10, "head", "cvarlist").split("\n")
+        self.assertEqual([f"line{i}" for i in range(10)], lines[:10])
+        self.assertIn("90 of 100 lines omitted", lines[10])
+        path = lines[10].split("full output: ", 1)[1].removesuffix("]")
+        self.assertTrue(os.path.exists(path))
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(text, f.read())
+
+    def test_tail_keeps_end(self):
+        text = "\n".join(f"line{i}" for i in range(100))
+        lines = truncate_output(text, 10, "tail", "cmd").split("\n")
+        self.assertEqual(11, len(lines))  # marker + 10 tail lines
+        self.assertIn("90 of 100 lines omitted", lines[0])
+        self.assertEqual([f"line{i}" for i in range(90, 100)], lines[1:])
+
+    def test_both_keeps_start_and_end(self):
+        text = "\n".join(f"line{i}" for i in range(100))
+        for max_lines, head_count in ((10, 5), (9, 5), (1, 1)):
+            with self.subTest(max_lines=max_lines):
+                lines = truncate_output(text, max_lines, "both", "cmd").split("\n")
+                self.assertEqual(max_lines + 1, len(lines))
+                self.assertEqual([f"line{i}" for i in range(head_count)], lines[:head_count])
+                self.assertIn(f"{100 - max_lines} of 100 lines omitted", lines[head_count])
+                tail_start = 100 - (max_lines - head_count)
+                self.assertEqual([f"line{i}" for i in range(tail_start, 100)], lines[head_count + 1:])
+
+    def test_zero_returns_only_marker(self):
+        text = "\n".join(f"line{i}" for i in range(7))
+        for keep in ("head", "tail", "both"):
+            with self.subTest(keep=keep):
+                out = truncate_output(text, 0, keep, "cmd")
+                self.assertNotIn("\n", out)
+                self.assertIn("7 of 7 lines omitted; full output: ", out)
+
+    def test_same_command_gets_distinct_logs(self):
+        text = "a\nb\nc"
+        first = truncate_output(text, 1, "head", "cvarlist").split("full output: ", 1)[1]
+        second = truncate_output(text, 1, "head", "cvarlist").split("full output: ", 1)[1]
+        self.assertNotEqual(first, second)
+        self.assertEqual(2, len(os.listdir(self._tmp.name)))
+
+    def test_unicode_output_and_command_filename(self):
+        text = "状态正常\n地图已加载\n玩家就绪"
+        out = truncate_output(text, 1, "head", 'echo ../状态; "ok"')
+        path = out.split("full output: ", 1)[1].removesuffix("]")
+        self.assertEqual(self._tmp.name, os.path.dirname(path))
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(text, f.read())
+
+    def test_unwritable_log_dir_still_returns_capped_output(self):
+        blocker = os.path.join(self._tmp.name, "not-a-dir")
+        with open(blocker, "w"):
+            pass
+        with patch.object(manager_module, "COMMAND_LOG_DIR", blocker):
+            with self.assertLogs(manager_module.log, "WARNING"):
+                lines = truncate_output("a\nb\nc", 1, "head", "cmd").split("\n")
+        self.assertEqual("a", lines[0])
+        self.assertIn("2 of 3 lines omitted; full output not saved: ", lines[1])
+
+
+# ---------------------------------------------------------------------------
 # Fake RCON server + tool tests over the in-memory MCP client
 # ---------------------------------------------------------------------------
 
@@ -364,8 +459,8 @@ class TestToolsOverMemory(unittest.TestCase):
             return manager.launch_game(extra_args, game_dir, timeout_s)
         def status():
             return manager.game_status()
-        def run(command):
-            return manager.run_command(command)
+        def run(command, max_lines=DEFAULT_COMMAND_MAX_LINES, keep="head"):
+            return manager.run_command(command, max_lines, keep)
         def find(name):
             return manager.find_cvar(name)
         def read_console(max_lines, cursor):
@@ -396,6 +491,95 @@ class TestToolsOverMemory(unittest.TestCase):
             anyio.run(main)
         finally:
             fake_srv.close()
+
+    def test_run_command_truncates_and_saves_full_output(self):
+        fake_srv = FakeRconServer(password="pw", canned={"status": "a\nb\nc\nd\ne\n"})
+        self.addCleanup(fake_srv.close)
+        mgr = Manager()
+        _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
+        mgr._password = "pw"
+        self.addCleanup(lambda: mgr._rcon.close() if mgr._rcon else None)
+        server = self._client(mgr)
+        with tempfile.TemporaryDirectory() as log_dir:
+            with patch.object(manager_module, "COMMAND_LOG_DIR", log_dir):
+                async def main():
+                    from mcp import Client
+                    async with Client(server) as client:
+                        full = await client.call_tool("run_command", {"command": "status"})
+                        self.assertFalse(full.is_error)
+                        self.assertEqual("a\nb\nc\nd\ne", full.content[0].text)
+                        capped = await client.call_tool(
+                            "run_command", {"command": "status", "max_lines": 2})
+                        self.assertFalse(capped.is_error)
+                        lines = capped.content[0].text.split("\n")
+                        self.assertEqual(["a", "b"], lines[:2])
+                        self.assertIn("3 of 5 lines omitted", lines[2])
+                        path = lines[2].split("full output: ", 1)[1].removesuffix("]")
+                        with open(path, encoding="utf-8") as f:
+                            self.assertEqual("a\nb\nc\nd\ne", f.read())
+                anyio.run(main)
+
+    def test_bad_keep_is_rejected_before_sending(self):
+        mgr = Manager()
+        with patch.object(mgr, "_connection_locked") as connection:
+            for max_lines in (-1, 1):
+                with self.subTest(max_lines=max_lines), self.assertRaises(ToolError):
+                    mgr.run_command("map crossfire", max_lines, "middle")
+            connection.assert_not_called()
+
+    def test_real_run_command_schema_caps_by_default(self):
+        async def main():
+            from mcp import Client
+            async with Client(halflife_mcp.mcp) as client:
+                tools = {t.name: t for t in (await client.list_tools()).tools}
+                props = tools["run_command"].input_schema["properties"]
+                self.assertEqual(200, props["max_lines"]["default"])
+                self.assertEqual(-1, props["max_lines"]["minimum"])
+                self.assertEqual("head", props["keep"]["default"])
+                self.assertEqual(["head", "tail", "both"], props["keep"]["enum"])
+                self.assertNotIn("truncate", props)
+        anyio.run(main)
+
+    def test_real_run_command_default_cap_and_internal_full_output(self):
+        text = "\n".join(f"line{i}" for i in range(201))
+        mgr = Manager()
+        with tempfile.TemporaryDirectory() as log_dir:
+            with patch.object(manager_module, "COMMAND_LOG_DIR", log_dir), \
+                    patch.object(mgr, "_connection_locked") as connection, \
+                    patch.object(halflife_mcp, "manager", mgr):
+                connection.return_value.command.return_value = text
+                async def main():
+                    from mcp import Client
+                    async with Client(halflife_mcp.mcp) as client:
+                        capped = await client.call_tool("run_command", {"command": "cvarlist"})
+                        self.assertFalse(capped.is_error)
+                        lines = capped.content[0].text.split("\n")
+                        self.assertEqual([f"line{i}" for i in range(200)], lines[:200])
+                        self.assertIn("1 of 201 lines omitted", lines[200])
+                        full = await client.call_tool(
+                            "run_command", {"command": "cvarlist", "max_lines": -1})
+                        self.assertEqual(text, full.content[0].text)
+                anyio.run(main)
+                self.assertEqual(text, mgr.run_command("cvarlist"))
+                own = 'cli.find: "sv_cheats" exists (cvar, value "0")'
+                connection.return_value.command.return_value = text + "\n" + own
+                self.assertEqual(own, mgr.find_cvar("sv_cheats"))
+                self.assertEqual(1, len(os.listdir(log_dir)))
+
+    def test_real_run_command_rejects_invalid_options_before_sending(self):
+        mgr = Manager()
+        with patch.object(mgr, "_connection_locked") as connection, \
+                patch.object(halflife_mcp, "manager", mgr):
+            async def main():
+                from mcp import Client
+                async with Client(halflife_mcp.mcp) as client:
+                    for options in ({"max_lines": -2}, {"keep": "middle"}):
+                        with self.subTest(options=options):
+                            result = await client.call_tool(
+                                "run_command", {"command": "map crossfire", **options})
+                            self.assertTrue(result.is_error)
+            anyio.run(main)
+            connection.assert_not_called()
 
     def test_wrong_password_is_tool_error(self):
         fake_srv = FakeRconServer(password="right", echo=True)

@@ -33,6 +33,7 @@ from pydantic import Field
 
 from game_process import BANNER_TIMEOUT_S, QUIT_TIMEOUT_S
 from halflifecli.manager import (
+    DEFAULT_COMMAND_MAX_LINES,
     DEFAULT_HOLD_MS,
     LAUNCH_TIMEOUT_CAP_S,
     MAX_HOLD_MS,
@@ -62,7 +63,9 @@ INSTRUCTIONS = (
     "the load to finish before snapshot. Before snapshot, make sure a map is "
     "loaded and rendering (the main menu does not render the world). Verify "
     "cvar/command names with find_cvar before running them. Call quit_game when "
-    "done. Use run_command for everything else. "
+    "done. Use run_command for everything else; its output is capped at "
+    "max_lines (default 200) and the full text of a capped command is saved to "
+    "the file path it returns, so grep that file instead of raising the cap. "
     "To press keys or mouse buttons in the game use send_key / send_mouse: they "
     "enter through the engine's own input path, work with the window hidden or "
     "block_input on, and never touch other windows. Do not simulate input with "
@@ -110,9 +113,11 @@ def game_status() -> GameStatus:
 @mcp.tool()
 def run_command(
     command: Annotated[str, Field(description="Console command or cvar assignment, e.g. 'status', 'sv_cheats 1'")],
+    max_lines: Annotated[int, Field(description="Cap on returned lines so a chatty command cannot flood context; -1 keeps every line, 0 returns only the saved-file marker. When lines are dropped, the full output is saved to a file whose path is returned.", ge=-1)] = DEFAULT_COMMAND_MAX_LINES,
+    keep: Annotated[Literal["head", "tail", "both"], Field(description="Which lines to keep when max_lines is hit: head = first lines, tail = last lines, both = first and last halves")] = "head",
 ) -> str:
     """Run one console command over RCON and return the captured output."""
-    return manager.run_command(command)
+    return manager.run_command(command, max_lines, keep)
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))

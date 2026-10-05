@@ -9,6 +9,8 @@ threads.
 import glob
 import logging
 import os
+import re
+import tempfile
 import threading
 import time
 
@@ -48,6 +50,63 @@ INPUT_ACTIONS = ("tap", "press", "release")
 DEFAULT_HOLD_MS = 100
 MAX_HOLD_MS = 5000
 MOUSE_BUTTONS_MASK = 0x1F  # left, right, middle, mouse4, mouse5
+
+# When run_command caps its output, keep the full text on disk so the agent
+# can grep the returned path instead of pulling every line into context.
+COMMAND_LOG_DIR = os.path.join(tempfile.gettempdir(), "halflife-mcp", "commands")
+DEFAULT_COMMAND_MAX_LINES = 200  # tool default; Manager itself keeps every line
+KEEP_MODES = ("head", "tail", "both")
+_LOG_SLUG = re.compile(r"[^A-Za-z0-9._-]+")
+_LOG_SLUG_MAX_LENGTH = 40
+
+
+def _check_keep(keep):
+    if keep not in KEEP_MODES:
+        raise ToolError(f"keep must be one of {', '.join(KEEP_MODES)}")
+
+
+def _write_command_log(command, text):
+    """Persist one command's full output; returns the file path.
+
+    mkstemp keeps names unique across concurrent MCP server processes.
+    """
+    os.makedirs(COMMAND_LOG_DIR, exist_ok=True)
+    slug = _LOG_SLUG.sub("_", command).strip("_")[:_LOG_SLUG_MAX_LENGTH] or "command"
+    fd, path = tempfile.mkstemp(
+        suffix=".log", dir=COMMAND_LOG_DIR,
+        prefix=f"{time.strftime('%Y%m%d-%H%M%S')}-{slug}-")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
+
+
+def truncate_output(text, max_lines, keep, command):
+    """Cap text to max_lines lines, keeping the head, tail or both.
+
+    Negative limits return the text unchanged. When lines are dropped, save
+    the full output and report its path (or the save error) in a marker line.
+    """
+    _check_keep(keep)
+    if max_lines < 0:
+        return text
+    lines = text.split("\n")
+    total = len(lines)
+    if total <= max_lines:
+        return text
+    try:
+        saved = f"full output: {_write_command_log(command, text)}"
+    except OSError as e:
+        log.warning("could not save full output of %r: %s", command, e)
+        saved = f"full output not saved: {e}"
+    marker = f"... [{total - max_lines} of {total} lines omitted; {saved}]"
+    if keep == "tail":
+        return "\n".join([marker] + lines[total - max_lines:])
+    head = max_lines - max_lines // 2 if keep == "both" else max_lines
+    body = lines[:head]
+    body.append(marker)
+    if keep == "both":
+        body += lines[total - (max_lines - head):]
+    return "\n".join(body)
 
 
 class Manager:
@@ -199,10 +258,11 @@ class Manager:
                 self._refresh_managed_endpoint_locked()
             return self._status_locked()
 
-    def run_command(self, command):
+    def run_command(self, command, max_lines=-1, keep="head"):
         cmd = (command or "").strip()
         if not cmd:
             raise ToolError("empty command")
+        _check_keep(keep)  # before sending: a bad option must not run e.g. map
         with self._lock:
             conn = self._connection_locked()
         try:
@@ -215,7 +275,7 @@ class Manager:
             if exit_code is not None:
                 raise ToolError(f"game is no longer running (exit code {exit_code}): {e}")
             raise ToolError(f"RCON command failed: {e}")
-        return out.strip() or "(no output)"
+        return truncate_output(out.strip() or "(no output)", max_lines, keep, cmd)
 
     def find_cvar(self, name):
         cmd = "cli.find %s" % (name or "").strip().replace("\n", " ")

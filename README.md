@@ -88,6 +88,20 @@ monitor tools `usermsg_status` (hook health),
 `usermsg_messages` (merged schema layouts), `usermsg_events` (decoded traffic,
 paged by `since_seq`), `usermsg_set_display`, and `usermsg_reload_schema`.
 
+`run_command(command, max_lines=200, keep="head")` returns at most 200 output
+lines by default. Set `max_lines=-1` for unlimited output or `max_lines=0` to
+return only the saved-file marker. `keep` selects the first lines (`head`),
+last lines (`tail`), or both halves (`both`; an odd limit keeps one extra line
+at the start). The marker is an additional line beyond the requested limit.
+
+Only output exceeding the limit is truncated and saved in full as UTF-8 under
+the system temporary directory, in `halflife-mcp/commands/`. The marker reports
+the omitted line count and log path; search that file for details instead of
+raising the limit. Filenames are unique across MCP processes. If saving fails,
+the capped output is still returned with the error in the marker. Logs have no
+automatic cleanup. Internal Manager calls keep their unlimited default so
+`find_cvar`, input injection and UserMsg parsing receive complete responses.
+
 Run it with [uv](https://docs.astral.sh/uv/) (dependencies are declared inline,
 nothing is installed globally):
 
