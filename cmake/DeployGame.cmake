@@ -42,10 +42,20 @@ set(_mod_dir "${game_directory}/${game_mod}")
 set(_configs_dir "${_mod_dir}/metahook/configs")
 set(_plugin_data_dir "${_configs_dir}/halflifecli")
 
+# Remove files a pre-halflifecli install left at the top level of metahook/configs
+# and that the plugin no longer reads: the old INI config and a stray port file.
+# The plugin reads metahook/configs/halflifecli/halflifecli.toml (src/config/config.cpp);
+# an .ini there is a dead artifact, not a live config.
+foreach(_legacy IN ITEMS halflifecli.ini halflifecli.port)
+    if(EXISTS "${_configs_dir}/${_legacy}")
+        file(REMOVE "${_configs_dir}/${_legacy}")
+        message(STATUS "Removed legacy ${_configs_dir}/${_legacy}")
+    endif()
+endforeach()
+
 # halflifecli.toml holds user settings and is shipped in the payload, so it must
 # not be overwritten by a redeploy. Migrate a legacy top-level copy first, then
-# if the destination still exists keep it by excluding it from staging. The port
-# file is merely stale and is rewritten by the plugin at startup.
+# if the destination still exists keep it by excluding it from staging.
 file(MAKE_DIRECTORY "${_plugin_data_dir}")
 if(EXISTS "${_configs_dir}/halflifecli.toml" AND NOT EXISTS "${_plugin_data_dir}/halflifecli.toml")
     file(RENAME "${_configs_dir}/halflifecli.toml" "${_plugin_data_dir}/halflifecli.toml")
@@ -90,11 +100,6 @@ if(NOT current_launcher STREQUAL launcher)
 endif()
 
 run_checked(${cli_command} ${target_args})
-
-# The port file is stale after the payload swap; drop it so the plugin rewrites it.
-if(EXISTS "${_configs_dir}/halflifecli.port")
-    file(RENAME "${_configs_dir}/halflifecli.port" "${_plugin_data_dir}/halflifecli.port")
-endif()
 
 # ---------------------------------------------------------------------------
 # plugins.lst: -plugins-only preserves it, so register our own entries here.
