@@ -11,10 +11,31 @@ runs on a random localhost port.
 Requirements: Visual Studio 2019+ with C++ x86/x64 toolset, CMake 3.21+, git.
 
 ```bat
-git submodule update --init --recursive --depth 1
+git submodule update --init --depth 1
 cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
 cmake --build build --config Release
 ```
+
+Only tomlplusplus is a submodule. CMake fetches pinned
+[MetaHook](https://github.com/MetaHookSv/MetaHook) and
+[VGUI2Extension](https://github.com/MetaHookSv/VGUI2Extension) sources on the
+first configure (network access required), without configuring their projects
+or fetching their submodules. VGUI2Extension supplies interface headers only;
+its runtime DLL must still be installed separately.
+
+To use existing source trees instead:
+
+```bat
+cmake -S . -B build -A Win32 ^
+  -DMETAHOOK_SOURCE_PATH=D:/MetaHookSv/MetaHook ^
+  -DVGUI2EXTENSION_SOURCE_PATH=D:/MetaHookSv/Plugins/VGUI2Extension
+```
+
+Each path independently falls back to FetchContent when empty. These CMake
+cache variables default to the same-named environment variables on the first
+configure; explicit `-D` values override them. Relative paths are resolved from
+the project root. Invalid explicit paths fail before any dependency downloads.
+The configure output prints the resolved source paths.
 
 
 ## Install

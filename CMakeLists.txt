@@ -16,10 +16,8 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
 	message(FATAL_ERROR "halflife-cli must target Win32/x86 (the game process is 32-bit). Configure with: cmake -A Win32")
 endif()
 
-set(METAHOOKSV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/MetaHookSv")
-if(NOT EXISTS "${METAHOOKSV_DIR}/include/metahook.h")
-	message(FATAL_ERROR "MetaHookSv submodule is missing. Run: git submodule update --init --depth 1")
-endif()
+include(cmake/Dependencies.cmake)
+halflife_cli_prepare_dependencies()
 
 set(TOMLPLUSPLUS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tomlplusplus")
 if(NOT EXISTS "${TOMLPLUSPLUS_DIR}/include/toml++/toml.hpp")
@@ -44,7 +42,7 @@ add_library(HalflifeCLI SHARED
 	src/usermsg/usermsg_decoder.cpp
 	src/usermsg/usermsg_monitor.cpp
 	src/util/toml_file.cpp
-	"${METAHOOKSV_DIR}/include/HLSDK/common/interface.cpp"
+	"${METAHOOK_SOURCE_PATH}/include/HLSDK/common/interface.cpp"
 )
 
 target_compile_features(HalflifeCLI PRIVATE cxx_std_20)
@@ -52,18 +50,20 @@ target_compile_features(HalflifeCLI PRIVATE cxx_std_20)
 target_include_directories(HalflifeCLI PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src
 	${TOMLPLUSPLUS_DIR}/include
-	${METAHOOKSV_DIR}/include
-	${METAHOOKSV_DIR}/include/Interface
-	${METAHOOKSV_DIR}/include/Interface/VGUI
-	${METAHOOKSV_DIR}/include/HLSDK/common
-	${METAHOOKSV_DIR}/include/HLSDK/engine
-	${METAHOOKSV_DIR}/include/HLSDK/cl_dll
-	${METAHOOKSV_DIR}/include/HLSDK/pm_shared
-	${METAHOOKSV_DIR}/include/HLSDK/public
-	${METAHOOKSV_DIR}/include/VGUI
-	${METAHOOKSV_DIR}/include/SourceSDK
-	${METAHOOKSV_DIR}/include/SourceSDK/tier0
-	${METAHOOKSV_DIR}/include/SourceSDK/tier1
+	"${VGUI2EXTENSION_SOURCE_PATH}/include/Interface"
+	"${VGUI2EXTENSION_SOURCE_PATH}/include/Interface/VGUI"
+	"${METAHOOK_SOURCE_PATH}/include"
+	"${METAHOOK_SOURCE_PATH}/include/Interface"
+	"${METAHOOK_SOURCE_PATH}/include/Interface/VGUI"
+	"${METAHOOK_SOURCE_PATH}/include/HLSDK/common"
+	"${METAHOOK_SOURCE_PATH}/include/HLSDK/engine"
+	"${METAHOOK_SOURCE_PATH}/include/HLSDK/cl_dll"
+	"${METAHOOK_SOURCE_PATH}/include/HLSDK/pm_shared"
+	"${METAHOOK_SOURCE_PATH}/include/HLSDK/public"
+	"${METAHOOK_SOURCE_PATH}/include/VGUI"
+	"${METAHOOK_SOURCE_PATH}/include/SourceSDK"
+	"${METAHOOK_SOURCE_PATH}/include/SourceSDK/tier0"
+	"${METAHOOK_SOURCE_PATH}/include/SourceSDK/tier1"
 )
 
 if(MSVC)
