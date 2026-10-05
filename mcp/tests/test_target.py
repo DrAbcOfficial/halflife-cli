@@ -19,6 +19,7 @@ from game_process import (
     build_game_argv,
     plugin_config_dir,
     port_file_path,
+    screenshot_dirs,
     screenshots_dir,
 )
 
@@ -64,6 +65,18 @@ class ModPathTests(unittest.TestCase):
         self.assertEqual(os.path.join(root, "svencoop", "metahook", "configs", "halflifecli"),
                          plugin_config_dir(root))
         self.assertEqual(os.path.join(root, "svencoop", "screenshots"), screenshots_dir(root))
+
+    def test_screenshot_dirs_cover_mod_root_and_screenshots(self):
+        # Sven writes into <mod>/screenshots; the shared GoldSrc engine (Half-Life,
+        # Counter-Strike, Condition Zero) writes into the mod root.
+        self.assertEqual(
+            (os.path.join(r"D:\CS3266", "cstrike"),
+             os.path.join(r"D:\CS3266", "cstrike", "screenshots")),
+            screenshot_dirs(CS_TARGET))
+        self.assertEqual(
+            (os.path.join(r"D:\Sven Co-op", "svencoop"),
+             os.path.join(r"D:\Sven Co-op", "svencoop", "screenshots")),
+            screenshot_dirs(r"D:\Sven Co-op"))
 
 
 class ResolveTargetTests(unittest.TestCase):

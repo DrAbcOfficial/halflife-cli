@@ -156,6 +156,26 @@ class TestFindNewScreenshot(unittest.TestCase):
             t.join()
             self.assertTrue(path.endswith("s.bmp"))
 
+    def test_appears_in_a_later_directory(self):
+        # The GoldSrc engine writes into the mod root while Sven writes into a
+        # screenshots subdirectory; a file in the second path must be found too.
+        with tempfile.TemporaryDirectory() as d:
+            mod_root = os.path.join(d, "czero")
+            shots = os.path.join(mod_root, "screenshots")
+            os.makedirs(shots)
+            created = os.path.join(mod_root, "HalfLife00.tga")
+
+            def write():
+                import time
+                time.sleep(0.6)
+                with open(created, "wb") as f:
+                    f.write(b"\0" * 64)
+            t = threading.Thread(target=write)
+            t.start()
+            path = find_new_screenshot(set(), (mod_root, shots), timeout=5, poll=0.2)
+            t.join()
+            self.assertEqual(os.path.abspath(created), path)
+
 
 # ---------------------------------------------------------------------------
 # UserMsg monitor helpers

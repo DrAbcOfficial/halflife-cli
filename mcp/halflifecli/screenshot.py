@@ -12,17 +12,25 @@ from game_process import IMAGE_EXTENSIONS
 SNAPSHOT_POLL_S = 0.5
 
 
-def find_new_screenshot(before, directory, timeout, poll=SNAPSHOT_POLL_S):
-    """Return the newest image file in `directory` that appeared after `before`.
+def find_new_screenshot(before, directories, timeout, poll=SNAPSHOT_POLL_S):
+    """Return the newest image file that appeared after `before` in any directory.
 
-    Raises TimeoutError when nothing appears in time.
+    `directories` is one path or an iterable of paths (the engine writes into
+    the mod root on GoldSrc and into <mod>/screenshots on Sven Co-op). Raises
+    TimeoutError when nothing appears in time.
     """
+    if isinstance(directories, (str, os.PathLike)):
+        directories = [directories]
+
     def scan():
-        return {
-            os.path.abspath(p)
-            for p in glob.glob(os.path.join(directory, "*"))
-            if p.lower().endswith(IMAGE_EXTENSIONS)
-        }
+        found = set()
+        for directory in directories:
+            found.update(
+                os.path.abspath(p)
+                for p in glob.glob(os.path.join(directory, "*"))
+                if p.lower().endswith(IMAGE_EXTENSIONS)
+            )
+        return found
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

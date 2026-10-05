@@ -26,7 +26,7 @@ from game_process import (
     RconStartError,
     build_game_argv,
     rcon_connect_host,
-    screenshots_dir,
+    screenshot_dirs,
 )
 from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
@@ -370,13 +370,14 @@ class Manager:
         with self._lock:
             conn = self._connection_locked()
             target = self._target_locked()
-        shots_dir = screenshots_dir(target)
-        os.makedirs(shots_dir, exist_ok=True)
-        before = {
-            os.path.abspath(p)
-            for p in glob.glob(os.path.join(shots_dir, "*"))
-            if p.lower().endswith(IMAGE_EXTENSIONS)
-        }
+        shots_dirs = screenshot_dirs(target)
+        before = set()
+        for directory in shots_dirs:
+            before.update(
+                os.path.abspath(p)
+                for p in glob.glob(os.path.join(directory, "*"))
+                if p.lower().endswith(IMAGE_EXTENSIONS)
+            )
         # `snapshot` is taken over by SteamScreenshots.dll (uploads to Steam, no
         # local file); the engine's own `screenshot` command writes a local file.
         try:
@@ -384,7 +385,7 @@ class Manager:
         except Exception as e:
             raise ToolError(f"RCON screenshot command failed: {e}")
         try:
-            path = find_new_screenshot(before, shots_dir, SNAPSHOT_TIMEOUT_S)
+            path = find_new_screenshot(before, shots_dirs, SNAPSHOT_TIMEOUT_S)
         except TimeoutError:
             raise ToolError("no new screenshot appeared; is a map loaded and rendering? (off-screen mode 1)")
         try:

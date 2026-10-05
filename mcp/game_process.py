@@ -122,7 +122,21 @@ def port_file_path(target):
 
 
 def screenshots_dir(target):
+    """Sven Co-op's dated screenshot directory, under the mod folder."""
     return os.path.join(mod_dir(target), "screenshots")
+
+
+def screenshot_dirs(target):
+    """Directories the engine `screenshot` command may write into.
+
+    Sven Co-op writes dated files under <mod>/screenshots; the GoldSrc engine
+    shared by Half-Life, Counter-Strike and Condition Zero writes HalfLifeNN.tga
+    into the mod root itself. Searching both keeps snapshot working across
+    engines without asking the target which one it is; a caller records what
+    already exists in every directory and picks the file that appears.
+    """
+    mod = mod_dir(target)
+    return (mod, screenshots_dir(target))
 
 
 # Local-file screenshot formats the engine writes, depending on engine and mod
