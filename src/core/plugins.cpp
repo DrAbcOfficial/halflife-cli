@@ -4,6 +4,7 @@
 #include "config/config.h"
 #include "console/console_bridge.h"
 #include "console/output_capture.h"
+#include "console/sys_error.h"
 #include "input/engine_input.h"
 #include "input/input_lock.h"
 #include "rcon/rcon_server.h"
@@ -29,6 +30,7 @@ void IPluginsV4::Init(metahook_api_t *pAPI, mh_interface_t *pInterface, mh_engin
 void IPluginsV4::Shutdown(void)
 {
 	RconServer::Shutdown();
+	SysError::Shutdown();
 	ConsoleBridge::Shutdown();
 	OutputCapture::Shutdown();
 	InputLock::Shutdown();
@@ -74,6 +76,16 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	{
 		// Commands still run; only the output mirroring is lost.
 		ConsoleBridge::WriteOut("[halflife-cli] warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled");
+	}
+	// Fatal errors wipe the console with the process; hook the engine's error
+	// path as soon as stdout is wired so their text is already out (and logged)
+	// when the game goes down. A failure here only costs the mirroring, so it
+	// is a warning like the capture one above.
+	SysError::Install();
+	if (!SysError::Hooked())
+	{
+		ConsoleBridge::WriteOut(std::string("[halflife-cli] warning: Sys_Error not hooked (") +
+			SysError::HookError() + "), fatal errors will not be mirrored");
 	}
 	if (CLI_Config().hide_window)
 	{

@@ -34,6 +34,7 @@ add_library(HalflifeCLI SHARED
 	src/config/config.cpp
 	src/console/console_bridge.cpp
 	src/console/output_capture.cpp
+	src/console/sys_error.cpp
 	src/input/engine_input.cpp
 	src/input/input_lock.cpp
 	src/rcon/rcon_server.cpp

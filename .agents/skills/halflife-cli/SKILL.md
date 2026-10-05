@@ -189,7 +189,12 @@ specific command; use stdin for one-way pushes.
 plugin sets `developer 1` by default so it does). Capture rides the
 VGUI2Extension plugin's GameConsole interface callbacks — `VGUI2Extension.dll`
 must be installed and listed in `plugins.lst` (the installer ensures both).
-This is your main observability channel.
+This is your main observability channel. It also carries
+`[halflife-cli] sys_error: ...`: the engine's `Sys_Error` (the path MetaHook
+reports its own load failures through) is hooked, so a fatal error's text is on
+stdout — and appended to `<mod>\metahook\configs\halflifecli\errors.log` — even
+though the game is about to die. Errors raised before this plugin loads are out
+of reach.
 
 **Plugin commands** (alongside all normal game commands):
 `cli.help`, `cli.rconinfo` (current RCON endpoint), `cli.window <0|1|2>`
@@ -350,6 +355,7 @@ file appearance, and clean quit.
 | `no game directory resolved` | nothing configured and the search found nothing | Ask the user for the path; verify and persist it (see "Resolve the game directory first") |
 |---|---|---|
 | No RCON banner within ~120 s | Plugin not loaded: missing DLL, x64 build, or not listed in `plugins.lst` | Check stdout for `halflife-cli ... loaded`; rebuild Win32; re-run `install_plugin.bat` |
+| Game dies during startup with no visible reason | A fatal error (engine, MetaHook or another plugin) | Read `[halflife-cli] sys_error: ...` on stdout and `<mod>\metahook\configs\halflifecli\errors.log`: the plugin hooks the engine's `Sys_Error` (MetaHook reports its own load failures through it) and mirrors the message before the process goes down |
 | `RCON failed to start (bind failed ...)` | Port conflict | Set a fixed `[rcon] port` in the ini, or kill the process holding it |
 | `warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled` | Console capture plugin absent/incompatible | Sven UDP replies still work through native redirect; TCP output capture requires VGUI2Extension.dll. |
 | RCON auth fails immediately | Password mismatch | Check the ini; note one-strike disconnect — open a fresh connection |

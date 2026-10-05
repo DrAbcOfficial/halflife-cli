@@ -203,6 +203,14 @@ take a minute.
 - **stdout mirror**: all captured console output is echoed live, including
   `Con_DPrintf` output when the engine routes it to the vgui console (the
   plugin sets `developer 1` by default so it does).
+- **Fatal errors**: the engine's `Sys_Error` is hooked — MetaHook reports its
+  own load failures through the same function — so the message is mirrored as
+  `[halflife-cli] sys_error: ...` and appended to
+  `<mod>\metahook\configs\halflifecli\errors.log` before the game goes down.
+  The original is called last, so the dialog and the exit path are unchanged.
+  Errors raised before this plugin loads (e.g. MetaHook failing to read its
+  own gamedata) stay out of reach, and a `warning: Sys_Error not hooked` line
+  reports an engine whose gamedata has no such symbol.
 - **UserMsg monitor**: every server user message the game receives is decoded
   per a TOML schema and printed as one `[usermsg] Name size=N field=value ...`
   console line (see below). `cli.usermsg` reports the hook state;
