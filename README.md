@@ -71,9 +71,24 @@ No game path is hardcoded: scripts resolve the game directory from (in order)
 their command-line argument, the `GAME_DIR` environment variable, and a
 machine-local, gitignored `game_dir.txt` — `scripts\game_dir.txt` for the
 `.bat` launchers, `mcp\game_dir.txt` for the Python tooling. Run
-`python mcp\find_game.py` to locate the install automatically (Steam
-registry, `libraryfolders.vdf`, common layouts) or to validate a candidate
-with `--dir <path>`; when nothing is found, configure the path as above.
+`python mcp\find_game.py` to locate the install automatically or to validate a
+candidate with `--dir <path>`; when nothing is found, configure the path as
+above.
+
+Sven Co-op (the default) is found without external tools (Steam registry,
+`libraryfolders.vdf`, common layouts). Other GoldSrc apps are resolved through
+`MetahookInstallerCLI`, which knows Steam's layout and each app's default mod:
+
+```bat
+python mcp\find_game.py --appid 70               # Half-Life (valve)
+python mcp\find_game.py --appid 10 --mod cstrike # Counter-Strike
+python mcp\find_game.py --appid 30               # Day of Defeat
+```
+
+`find_game.py` discovers `MetahookInstallerCLI.exe` from
+`HALFLIFECLI_INSTALLER_CLI_EXECUTABLE` or the CMake build tree (populate it
+once with `-DHALFLIFECLI_ENABLE_LAUNCH_GAME=ON`); it is never downloaded by the
+script itself.
 
 ### Visual Studio one-click deploy + debug
 
