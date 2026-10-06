@@ -327,8 +327,8 @@ allowed_ips = ""
 
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
-block_input = false         # true = the game ignores the physical keyboard/mouse buttons (injected input still passes)
-input_lock = false          # true = physical mouse motion stops driving the view
+block_input = true          # true = the game ignores the physical keyboard/mouse buttons (injected input still passes)
+input_lock = true           # true = physical mouse motion stops driving the view
 developer = 1
 console_topmost = false     # keep the CLI console window always on top
 ```

@@ -383,8 +383,8 @@ allowed_ips = ""            # comma-separated IPv4 allowlist; empty = no additio
 
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
-block_input = false         # true = the game ignores the physical keyboard/mouse buttons (cli.blockinput toggles at runtime; cli.trapkey/cli.trapmouse still inject)
-input_lock = false          # true = lock the mouse so it stops driving the view (cli.inputlock toggles at runtime)
+block_input = true          # true = the game ignores the physical keyboard/mouse buttons (cli.blockinput toggles at runtime; cli.trapkey/cli.trapmouse still inject)
+input_lock = true           # true = lock the mouse so it stops driving the view (cli.inputlock toggles at runtime)
 developer = 1               # set the developer cvar at startup
 console_topmost = false     # keep the CLI console window always on top
 rcon = true                 # false leaves native engine networking/authentication untouched
