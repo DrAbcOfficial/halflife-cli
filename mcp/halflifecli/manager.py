@@ -51,6 +51,9 @@ INPUT_ACTIONS = ("tap", "press", "release")
 DEFAULT_HOLD_MS = 100
 MAX_HOLD_MS = 5000
 MOUSE_BUTTONS_MASK = 0x1F  # left, right, middle, mouse4, mouse5
+MOUSE_MODES = ("absolute", "relative")
+INT32_MIN, INT32_MAX = -(2**31), 2**31 - 1
+_MOUSE_POSITION = re.compile(r"^cli\.mousemove: x=([0-9]+) y=([0-9]+)(?:\s|$)", re.MULTILINE)
 
 # When run_command caps its output, keep the full text on disk so the agent
 # can grep the returned path instead of pulling every line into context.
@@ -67,6 +70,13 @@ _LOG_SLUG_MAX_LENGTH = 40
 def _check_keep(keep):
     if keep not in KEEP_MODES:
         raise ToolError(f"keep must be one of {', '.join(KEEP_MODES)}")
+
+
+def _check_mouse_coordinates(x, y, mode):
+    if mode not in MOUSE_MODES:
+        raise ToolError(f"mode must be one of {', '.join(MOUSE_MODES)}")
+    if any(type(value) is not int or not INT32_MIN <= value <= INT32_MAX for value in (x, y)):
+        raise ToolError("x and y must be signed 32-bit integers in original screenshot pixels")
 
 
 def _write_command_log(command, text):
@@ -118,6 +128,8 @@ class Manager:
 
     def __init__(self):
         self._lock = threading.Lock()
+        # Serializes whole input sequences, including a tap's hold interval.
+        self._input_lock = threading.RLock()
         self._proc = None          # GameProcess, set while this server owns the game
         self._target = None        # GameTarget this session works with
         self._rcon = None          # RconConnection for the managed game
@@ -319,7 +331,7 @@ class Manager:
         return "\n".join(own) if own else out
 
     def _trap_command(self, command):
-        """Run a cli.trapkey / cli.trapmouse command; plugin-reported failures become ToolErrors."""
+        """Run a native input command; plugin-reported failures become ToolErrors."""
         prefix = command.split(" ", 1)[0]
         out = self.run_command(command)
         own = [ln for ln in out.splitlines() if ln.startswith((prefix + ":", "usage: " + prefix))]
@@ -346,14 +358,35 @@ class Manager:
         # One console token: whitespace, ';' and '"' would split or quote the command.
         if not key or any(c.isspace() or c in ';"' for c in key):
             raise ToolError("key must be one engine key name or character, e.g. w, SPACE, ENTER, MOUSE1, SEMICOLON")
-        return self._trap_sequence(f"cli.trapkey {key} 1", f"cli.trapkey {key} 0", action, hold_ms)
+        with self._input_lock:
+            return self._trap_sequence(f"cli.trapkey {key} 1", f"cli.trapkey {key} 0", action, hold_ms)
 
-    def send_mouse(self, buttons, action, hold_ms):
+    def move_mouse(self, x, y, mode="absolute"):
+        _check_mouse_coordinates(x, y, mode)
+        with self._input_lock:
+            out = self._trap_command(f"cli.mousemove {mode} {x} {y}")
+            # Unlike key/button replies, a move must report where the cursor went.
+            if _MOUSE_POSITION.search(out) is None:
+                raise ToolError(f"missing valid mouse coordinates in plugin reply: {out}")
+            return out
+
+    def send_mouse(self, buttons, action, hold_ms, x=None, y=None, mode="absolute"):
         buttons = int(buttons)
         if not 0 < buttons <= MOUSE_BUTTONS_MASK:
             raise ToolError(f"buttons must be a mask in 1..{MOUSE_BUTTONS_MASK} (1=left 2=right 4=middle 8=mouse4 16=mouse5)")
-        # buttons is the held mask after the event, so release reports none held.
-        return self._trap_sequence(f"cli.trapmouse {buttons} 1", "cli.trapmouse 0 0", action, hold_ms)
+        if action not in INPUT_ACTIONS:
+            raise ToolError(f"action must be one of {', '.join(INPUT_ACTIONS)}")
+        if (x is None) != (y is None):
+            raise ToolError("x and y must be provided together")
+        if x is not None:
+            _check_mouse_coordinates(x, y, mode)
+        elif mode not in MOUSE_MODES:
+            raise ToolError(f"mode must be one of {', '.join(MOUSE_MODES)}")
+        with self._input_lock:
+            motion = self.move_mouse(x, y, mode) if x is not None else None
+            # buttons is the held mask after the event, so release reports none held.
+            edges = self._trap_sequence(f"cli.trapmouse {buttons} 1", "cli.trapmouse 0 0", action, hold_ms)
+            return "\n".join((motion, edges)) if motion is not None else edges
 
     def read_console(self, max_lines, cursor):
         with self._lock:
@@ -389,10 +422,12 @@ class Manager:
         except TimeoutError:
             raise ToolError("no new screenshot appeared; is a map loaded and rendering? (off-screen mode 1)")
         try:
-            png, width, height = shot_to_png(path, max_edge)
+            png, width, height, original_width, original_height = shot_to_png(path, max_edge)
         except Exception as e:
             raise ToolError(f"screenshot could not be read: {e}")
-        return [Image(data=png, format="png"), f"saved: {path} ({width}x{height})"]
+        return [Image(data=png, format="png"),
+                f"saved: {path} ({width}x{height}); original_size=({original_width},{original_height}); "
+                f"returned_size=({width},{height})"]
 
     def quit_game(self, timeout_s):
         timeout_s = min(max(timeout_s or QUIT_TIMEOUT_S, 1), QUIT_TIMEOUT_CAP_S)

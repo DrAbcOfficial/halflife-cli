@@ -36,6 +36,7 @@ add_library(HalflifeCLI SHARED
 	src/console/output_capture.cpp
 	src/console/sys_error.cpp
 	src/input/engine_input.cpp
+	src/input/focus_lock.cpp
 	src/input/input_lock.cpp
 	src/rcon/rcon_server.cpp
 	src/rcon/tcp_server.cpp
@@ -44,6 +45,7 @@ add_library(HalflifeCLI SHARED
 	src/usermsg/usermsg_schema.cpp
 	src/usermsg/usermsg_decoder.cpp
 	src/usermsg/usermsg_monitor.cpp
+	src/util/import_hook.cpp
 	src/util/toml_file.cpp
 	"${METAHOOK_SOURCE_PATH}/include/HLSDK/common/interface.cpp"
 )
@@ -132,6 +134,10 @@ if(BUILD_TESTING)
     add_executable(UserMsgHookTest tests/usermsg_hook_test.cpp)
     target_include_directories(UserMsgHookTest PRIVATE src)
     add_test(NAME UserMsgHook COMMAND UserMsgHookTest)
+    add_executable(InputStateTest tests/input_state_test.cpp)
+    target_compile_features(InputStateTest PRIVATE cxx_std_20)
+    target_include_directories(InputStateTest PRIVATE src)
+    add_test(NAME InputState COMMAND InputStateTest)
 endif()
 
 # Optional Visual Studio F5 workflow: build HalflifeCLI, deploy it into the game

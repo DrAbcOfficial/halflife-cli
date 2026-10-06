@@ -1,5 +1,7 @@
 #include "input/engine_input.h"
 
+#include "input/input_state.h"
+#include "util/import_hook.h"
 #include "window/window_manager.h"
 
 #include <metahook.h>
@@ -11,6 +13,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <string>
+#include <unordered_map>
 
 namespace
 {
@@ -21,6 +24,13 @@ namespace
 	constexpr unsigned SDL_MOUSEBUTTONUP = 0x402, SDL_MOUSEWHEEL = 0x403;
 	constexpr unsigned SDL_INPUT_END = 0x500;
 	constexpr int MOUSE_BUTTONS_MASK = 31;
+	constexpr int MOUSE_BUTTONS_COUNT = 5;
+	// SDL button numbers in mask bit order (left, right, middle, mouse4,
+	// mouse5), as CGame builds its mouse state.
+	const unsigned char SDL_BUTTONS[MOUSE_BUTTONS_COUNT] = { 1, 3, 2, 4, 5 };
+	// Our injected mouse events carry this in `which`, so a queued motion is
+	// still recognized when it is dispatched; the low bits sequence motions.
+	constexpr unsigned INJECTED_MOUSE_ID = 0x48000000, INJECTED_MOUSE_ID_MASK = 0xFF000000;
 
 	// SDL2's stable event ABI. No SDL import library is needed. The wheel
 	// structure grew in later SDL2 versions, but its initial fields did not.
@@ -29,6 +39,7 @@ namespace
 		unsigned type;
 		struct { unsigned type, timestamp, windowID; unsigned char state, repeat, padding[2];
 			int scancode, sym; unsigned short mod; unsigned unused; } key;
+		struct { unsigned type, timestamp, windowID, which, state; int x, y, xrel, yrel; } motion;
 		struct { unsigned type, timestamp, windowID, which; unsigned char button, state, clicks, padding;
 			int x, y; } button;
 		struct { unsigned type, timestamp, windowID, which; int x, y; unsigned direction;
@@ -43,8 +54,17 @@ namespace
 		int(__cdecl* SDL_GetEventFilter)(SDLFilter*, void**) = nullptr;
 		int(__cdecl* SDL_PushEvent)(SDLEvent*) = nullptr;
 		int(__cdecl* SDL_GetKeyFromScancode)(int) = nullptr;
+		int(__cdecl* SDL_HasEvent)(unsigned) = nullptr;
 		int(__fastcall* CGame_WindowProc)(void*, int, HWND, UINT, WPARAM, LPARAM) = nullptr;
 	} gPrivateFuncs;
+	// SDL entry points behind the engine import hooks. Filled once and never
+	// cleared: the hooked engine imports may still run after OnExitGame.
+	struct RealFuncs
+	{
+		unsigned(__cdecl* SDL_GetMouseState)(int*, int*) = nullptr;
+		int(__cdecl* SDL_PollEvent)(SDLEvent*) = nullptr;
+		int(__cdecl* SDL_WaitEventTimeout)(SDLEvent*, int) = nullptr;
+	} gRealFuncs;
 	bool g_sdlFilterInstalled = false;
 	SDLFilter g_previousFilter = nullptr;
 	void* g_previousFilterData = nullptr;
@@ -58,6 +78,21 @@ namespace
 	thread_local bool g_injecting = false;
 	int g_mouseButtons = 0;
 	UINT g_legacyWheelMessage = 0;
+
+	// Virtual UI cursor: injected motion owns it until allowed physical
+	// motion takes over. Pending motions keep the geometry they were queued
+	// with, so a resize before dispatch rebases them.
+	InputState::MouseState g_mouse;
+	std::unordered_map<unsigned, InputState::MouseMotion> g_pendingMotions;
+	unsigned g_motionSequence = 0;
+	void* g_mouseWindow = nullptr;
+	// The engine imports through which it reads, warps and dispatches the
+	// cursor. Accumulated like InputLock's flags: a repeated Install finds
+	// the slots already ours.
+	bool g_hookedMouseState = false, g_hookedPollEvent = false, g_hookedWaitEvent = false;
+	// Set while the engine dispatches our injected motion: its recentring
+	// warp must not discard the virtual move.
+	thread_local bool g_dispatchingInjectedMotion = false;
 
 	bool BlockEvent(bool keyboard)
 	{
@@ -97,6 +132,8 @@ namespace
 		return false;
 	}
 
+	void HookEngineMouseImports();
+
 	void InstallEngineHooks()
 	{
 		if (g_sdlFilterInstalled || g_windowHook)
@@ -111,8 +148,13 @@ namespace
 			gPrivateFuncs.SDL_GetEventFilter = (decltype(gPrivateFuncs.SDL_GetEventFilter))GetProcAddress(sdl, "SDL_GetEventFilter");
 			gPrivateFuncs.SDL_PushEvent = (decltype(gPrivateFuncs.SDL_PushEvent))GetProcAddress(sdl, "SDL_PushEvent");
 			gPrivateFuncs.SDL_GetKeyFromScancode = (decltype(gPrivateFuncs.SDL_GetKeyFromScancode))GetProcAddress(sdl, "SDL_GetKeyFromScancode");
+			gPrivateFuncs.SDL_HasEvent = (decltype(gPrivateFuncs.SDL_HasEvent))GetProcAddress(sdl, "SDL_HasEvent");
+			gRealFuncs.SDL_GetMouseState = (decltype(gRealFuncs.SDL_GetMouseState))GetProcAddress(sdl, "SDL_GetMouseState");
+			gRealFuncs.SDL_PollEvent = (decltype(gRealFuncs.SDL_PollEvent))GetProcAddress(sdl, "SDL_PollEvent");
+			gRealFuncs.SDL_WaitEventTimeout = (decltype(gRealFuncs.SDL_WaitEventTimeout))GetProcAddress(sdl, "SDL_WaitEventTimeout");
 			if (!gPrivateFuncs.SDL_SetEventFilter || !gPrivateFuncs.SDL_GetEventFilter ||
-				!gPrivateFuncs.SDL_PushEvent || !gPrivateFuncs.SDL_GetKeyFromScancode)
+				!gPrivateFuncs.SDL_PushEvent || !gPrivateFuncs.SDL_GetKeyFromScancode || !gPrivateFuncs.SDL_HasEvent ||
+				!gRealFuncs.SDL_GetMouseState || !gRealFuncs.SDL_PollEvent || !gRealFuncs.SDL_WaitEventTimeout)
 			{
 				g_engineHooksError = "SDL2 input exports missing";
 				return;
@@ -120,6 +162,7 @@ namespace
 			gPrivateFuncs.SDL_GetEventFilter(&g_previousFilter, &g_previousFilterData);
 			gPrivateFuncs.SDL_SetEventFilter(FilterSDLEvent, nullptr);
 			g_sdlFilterInstalled = true;
+			HookEngineMouseImports();
 		}
 		else
 		{
@@ -201,6 +244,180 @@ namespace
 		return result == 1;
 	}
 
+	unsigned SDLButtonState()
+	{
+		unsigned state = 0;
+		for (int i = 0; i < MOUSE_BUTTONS_COUNT; ++i)
+			if (g_mouseButtons & (1 << i))
+				state |= 1u << (SDL_BUTTONS[i] - 1);
+		return state;
+	}
+
+	// Refresh the cursor geometry: the game window's client size and the
+	// video mode size (what a screenshot captures). A recreated window drops
+	// the virtual cursor and every pending motion.
+	bool SyncMouseGeometry()
+	{
+		void* window = WindowManager::GetGameWindow();
+		InputState::MouseGeometry geometry;
+		if (!window || !WindowManager::GetClientSize(geometry.windowWidth, geometry.windowHeight))
+		{
+			g_engineHooksError = "game window unavailable";
+			return false;
+		}
+		if (g_mouseWindow != window)
+		{
+			g_mouse.Reset();
+			g_pendingMotions.clear();
+			g_mouseWindow = window;
+		}
+		g_pMetaHookAPI->GetVideoMode(&geometry.imageWidth, &geometry.imageHeight, nullptr, nullptr);
+		if (!g_mouse.SetGeometry(geometry))
+		{
+			g_engineHooksError = "game image or window has no valid size";
+			return false;
+		}
+		if (!g_mouse.HasVirtualPosition())
+		{
+			int x = 0, y = 0;
+			gRealFuncs.SDL_GetMouseState(&x, &y);
+			g_mouse.Seed({ x, y });
+			if (g_block.load())
+				g_mouse.KeepVirtualPosition();
+		}
+		return true;
+	}
+
+	// The virtual cursor needs the SDL2 backend and the engine imports
+	// through which the engine reads, warps and dispatches the cursor.
+	bool VirtualMouseReady()
+	{
+		if (!g_sdlFilterInstalled)
+			g_engineHooksError = "mouse motion needs the SDL2 input backend";
+		else if (!g_hookedMouseState || !g_hookedPollEvent || !g_hookedWaitEvent)
+			g_engineHooksError = "engine SDL mouse imports not hooked";
+		else
+			return true;
+		return false;
+	}
+
+	bool PushMouseMotion(InputState::MousePosition target, InputState::MousePosition delta)
+	{
+		// SDL mode switches may flush the queue: once no motion is queued,
+		// no pending motion can still arrive.
+		if (!gPrivateFuncs.SDL_HasEvent(SDL_MOUSEMOTION))
+			g_pendingMotions.clear();
+		SDLEvent event{};
+		event.motion.type = SDL_MOUSEMOTION;
+		do
+			event.motion.which = INJECTED_MOUSE_ID | (++g_motionSequence & ~INJECTED_MOUSE_ID_MASK);
+		while (g_pendingMotions.count(event.motion.which));
+		event.motion.state = SDLButtonState();
+		event.motion.x = target.x;
+		event.motion.y = target.y;
+		event.motion.xrel = delta.x;
+		event.motion.yrel = delta.y;
+		g_pendingMotions.emplace(event.motion.which, InputState::MouseMotion{ target, delta, g_mouse.Geometry() });
+		if (PushEvent(event))
+			return true;
+		g_pendingMotions.erase(event.motion.which);
+		return false;
+	}
+
+	bool IsInjectedMouseMotion(const SDLEvent& event)
+	{
+		return event.type == SDL_MOUSEMOTION && (event.motion.which & INJECTED_MOUSE_ID_MASK) == INJECTED_MOUSE_ID;
+	}
+
+	// A motion the engine is about to dispatch: rebase queued injection,
+	// let allowed physical motion take the cursor over, and reject blocked
+	// physical or obsolete injected motion.
+	bool ObserveMouseMotion(SDLEvent& event)
+	{
+		bool injected = IsInjectedMouseMotion(event);
+		if (!SyncMouseGeometry())
+			return !injected;
+		if (injected)
+		{
+			auto pending = g_pendingMotions.find(event.motion.which);
+			if (pending == g_pendingMotions.end())
+				return false;
+			auto motion = pending->second.Rebase(g_mouse.Geometry());
+			g_pendingMotions.erase(pending);
+			event.motion.x = motion.position.x;
+			event.motion.y = motion.position.y;
+			event.motion.xrel = motion.delta.x;
+			event.motion.yrel = motion.delta.y;
+		}
+		if (!g_mouse.ObserveMotion({ event.motion.x, event.motion.y }, injected, g_block.load()))
+			return false;
+		if (injected)
+		{
+			auto position = g_mouse.WindowPosition();
+			event.motion.x = position.x;
+			event.motion.y = position.y;
+		}
+		return true;
+	}
+
+	// VGUI1/VGUI2 cursor queries and the HUD mouse position all read
+	// SDL_GetMouseState in the engine; the engine converts the window
+	// position to UI coordinates itself.
+	unsigned __cdecl Hooked_SDLGetMouseState(int* x, int* y)
+	{
+		unsigned buttons = gRealFuncs.SDL_GetMouseState(x, y);
+		if (g_sdlFilterInstalled && SyncMouseGeometry() && g_mouse.HasVirtualPosition())
+		{
+			auto position = g_mouse.WindowPosition();
+			if (x) *x = position.x;
+			if (y) *y = position.y;
+		}
+		return buttons;
+	}
+
+	// Post-process an event the engine is about to dispatch; false drops it.
+	bool AcceptEvent(SDLEvent& event)
+	{
+		if (!g_sdlFilterInstalled || event.type != SDL_MOUSEMOTION)
+			return true;
+		if (!ObserveMouseMotion(event))
+			return false;
+		g_dispatchingInjectedMotion = IsInjectedMouseMotion(event);
+		return true;
+	}
+
+	// CGame::SleepUntilInput waits for one event, polls the rest and
+	// dispatches each inline, so these imports are the dispatch point.
+	int __cdecl Hooked_SDLPollEvent(SDLEvent* event)
+	{
+		g_dispatchingInjectedMotion = false;
+		int result;
+		do
+			result = gRealFuncs.SDL_PollEvent(event);
+		while (result > 0 && event && !AcceptEvent(*event));
+		return result;
+	}
+
+	int __cdecl Hooked_SDLWaitEventTimeout(SDLEvent* event, int timeout)
+	{
+		g_dispatchingInjectedMotion = false;
+		int result = gRealFuncs.SDL_WaitEventTimeout(event, timeout);
+		// A dropped event ends the wait; continue with what is already queued.
+		if (result > 0 && event && !AcceptEvent(*event))
+			return Hooked_SDLPollEvent(event);
+		return result;
+	}
+
+	// GoldSrc uses the SDL2 ABI, including when sdl2-compat forwards to SDL3.
+	void HookEngineMouseImports()
+	{
+		HMODULE engine = g_pMetaHookAPI->GetEngineModule();
+		BlobHandle_t blob = engine ? nullptr : g_pMetaHookAPI->GetBlobEngineModule();
+		g_hookedMouseState |= ImportHook::Hook(engine, blob, "SDL2.dll", "SDL_GetMouseState", Hooked_SDLGetMouseState);
+		g_hookedPollEvent |= ImportHook::Hook(engine, blob, "SDL2.dll", "SDL_PollEvent", Hooked_SDLPollEvent);
+		g_hookedWaitEvent |= ImportHook::Hook(engine, blob, "SDL2.dll", "SDL_WaitEventTimeout", Hooked_SDLWaitEventTimeout);
+	}
+
 	bool CallWindowProc(UINT msg, WPARAM wp, LPARAM lp)
 	{
 		auto window = (HWND)WindowManager::GetGameWindow();
@@ -220,12 +437,19 @@ namespace
 		bool ok;
 		if (g_sdlFilterInstalled)
 		{
-			const unsigned char buttons[] = { 1, 3, 2, 4, 5 };
 			SDLEvent event{};
 			event.button.type = down ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
-			event.button.button = buttons[index];
+			event.button.which = INJECTED_MOUSE_ID;
+			event.button.button = SDL_BUTTONS[index];
 			event.button.state = down;
 			event.button.clicks = 1;
+			// Best effort: the button still goes in without a window.
+			if (SyncMouseGeometry())
+			{
+				auto position = g_mouse.WindowPosition();
+				event.button.x = position.x;
+				event.button.y = position.y;
+			}
 			ok = PushEvent(event);
 		}
 		else
@@ -233,7 +457,7 @@ namespace
 			const UINT messages[] = { WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN, WM_XBUTTONDOWN };
 			const unsigned flags[] = { MK_LBUTTON, MK_RBUTTON, MK_MBUTTON, MK_XBUTTON1, MK_XBUTTON2 };
 			WPARAM wp = 0;
-			for (int i = 0; i < 5; ++i)
+			for (int i = 0; i < MOUSE_BUTTONS_COUNT; ++i)
 				if (mask & (1 << i)) wp |= flags[i];
 			if (index >= 3) wp |= (index == 3 ? XBUTTON1 : XBUTTON2) << 16;
 			ok = CallWindowProc(messages[index] + (down ? 0 : 1), wp, 0);
@@ -281,6 +505,9 @@ namespace EngineInput
 
 	void SetBlockInput(bool block)
 	{
+		// Freeze the last accepted position before SDL can sample blocked motion.
+		if (block && !g_block.load() && g_sdlFilterInstalled && SyncMouseGeometry())
+			g_mouse.KeepVirtualPosition();
 		g_block = block;
 		ApplyWindowFallback();
 	}
@@ -386,9 +613,44 @@ namespace EngineInput
 		// The held mask is authoritative; native APIs need individual edges.
 		// Keep each successful edge if a later SDL push fails, so retrying works.
 		(void)down;
-		for (int i = 0; i < 5; ++i)
+		for (int i = 0; i < MOUSE_BUTTONS_COUNT; ++i)
 			if ((buttons ^ g_mouseButtons) & (1 << i))
 				if (!SendButton(i, (buttons & (1 << i)) != 0)) return false;
+		return true;
+	}
+
+	bool MoveMouse(int x, int y, bool relative)
+	{
+		if (!EngineHooksInstalled())
+			return false;
+		g_engineHooksError.clear();
+		return VirtualMouseReady() && SyncMouseGeometry() && g_mouse.Move(x, y, relative, PushMouseMotion);
+	}
+
+	bool GetMousePosition(int& x, int& y)
+	{
+		if (!EngineHooksInstalled() || !VirtualMouseReady() || !SyncMouseGeometry())
+			return false;
+		auto position = g_mouse.ScreenPosition();
+		x = position.x;
+		y = position.y;
+		return true;
+	}
+
+	bool WarpVirtualMouse(int x, int y)
+	{
+		if (!g_sdlFilterInstalled)
+			return false;
+		// The engine recentres after motion; injected motion stays where it was put.
+		if (g_dispatchingInjectedMotion)
+			return true;
+		if (!SyncMouseGeometry() || !g_mouse.HasVirtualPosition())
+			return false;
+		auto target = g_mouse.Geometry().ClampWindow({ x, y });
+		auto current = g_mouse.WindowPosition();
+		if (target.x != current.x || target.y != current.y)
+			g_mouse.MoveWindow(target, PushMouseMotion);
+		// Even a rejected virtual warp must not move the user's desktop cursor.
 		return true;
 	}
 
@@ -419,6 +681,10 @@ namespace EngineInput
 		g_game = nullptr;
 		g_mouseButtons = 0;
 		g_injecting = false;
+		g_mouse.Reset();
+		g_pendingMotions.clear();
+		g_mouseWindow = nullptr;
+		g_dispatchingInjectedMotion = false;
 		g_engineHooksError = "engine exited";
 	}
 

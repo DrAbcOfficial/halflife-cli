@@ -19,5 +19,6 @@ namespace WindowManager
 	int GetMode();
 	void SetInputDisabled(bool disabled);  // true = the game window ignores mouse/keyboard
 	void* GetGameWindow();               // cached game HWND as void* (keeps <windows.h> out of this header); null when not found
+	bool GetClientSize(int& width, int& height);  // game window client area; false when not found
 	void Restore();                      // best effort restore on shutdown
 }

@@ -6,6 +6,7 @@
 #include "console/output_capture.h"
 #include "console/sys_error.h"
 #include "input/engine_input.h"
+#include "input/focus_lock.h"
 #include "input/input_lock.h"
 #include "rcon/rcon_server.h"
 #include "usermsg/usermsg_monitor.h"
@@ -34,6 +35,7 @@ void IPluginsV4::Shutdown(void)
 	ConsoleBridge::Shutdown();
 	OutputCapture::Shutdown();
 	InputLock::Shutdown();
+	FocusLock::Shutdown();
 	EngineInput::Shutdown();
 	UserMsgMonitor::Shutdown();
 }
@@ -101,6 +103,10 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	EngineInput::Install();
 	EngineInput::SetBlockInput(CLI_Config().block_input);
 
+	// Applied on the engine's next activation if it has not activated yet.
+	FocusLock::Install();
+	FocusLock::SetActive(CLI_Config().focus_lock);
+
 	ConsoleBridge::WriteOut("halflife-cli " + std::string(GetVersion()) +
 		" loaded (engine: " + g_pMetaHookAPI->GetEngineTypeName() + ")");
 	RconServer::OnClientReady();
@@ -111,6 +117,7 @@ void IPluginsV4::ExitGame(int iResult)
 	RconServer::OnEngineShutdown();
 	ConsoleBridge::Shutdown();
 	InputLock::Shutdown();
+	FocusLock::OnExitGame();
 	EngineInput::OnExitGame();
 	WindowManager::Restore();
 	UserMsgMonitor::Shutdown();

@@ -21,6 +21,7 @@ capture = true              # capture console output via VGUI2Extension GameCons
 console = true              # CLI console bridge: stdin commands + stdout mirror
 block_input = false         # true = ignore the physical keyboard/mouse (cli.blockinput toggles at runtime)
 input_lock = false          # true = stop the mouse from driving the view (cli.inputlock toggles at runtime)
+focus_lock = true           # keep the game internally active while unfocused/hidden (cli.focuslock toggles at runtime)
 console_topmost = false     # keep the CLI console window always on top
 rcon = true                 # false leaves native engine networking/authentication untouched
 

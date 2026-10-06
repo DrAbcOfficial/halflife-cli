@@ -47,13 +47,18 @@ def find_new_screenshot(before, directories, timeout, poll=SNAPSHOT_POLL_S):
 
 
 def shot_to_png(path, max_edge):
-    """Decode a screenshot (BMP/TGA/...), optionally downscale, return (png, w, h)."""
+    """Decode a screenshot (BMP/TGA/...), optionally downscale.
+
+    Returns (png, returned_w, returned_h, original_w, original_h); mouse
+    coordinates use the original size.
+    """
     from PIL import Image as PILImage  # imported lazily so pure tests skip Pillow
 
     with PILImage.open(path) as img:
+        original_width, original_height = img.size
         img = img.convert("RGB")
         if max_edge and max(img.size) > max_edge:
             img.thumbnail((max_edge, max_edge))
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        return buf.getvalue(), img.width, img.height
+        return buf.getvalue(), img.width, img.height, original_width, original_height

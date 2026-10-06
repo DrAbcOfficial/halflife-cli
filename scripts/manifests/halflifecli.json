@@ -6,6 +6,8 @@
   "symbols": {
     "engine": {
       "Cbuf_Execute": "function",
+      "CGame_AppActivate": "function",
+      "CGame::SleepUntilInput": "virtualFunction",
       "_Host_Frame_to_Cbuf_Execute_callsite_0": "patch",
       "Host_Shutdown": "function",
       "NET_Shutdown": "function",

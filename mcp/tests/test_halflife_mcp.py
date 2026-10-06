@@ -126,19 +126,22 @@ class TestShotToPng(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             src = os.path.join(d, "shot.bmp")
             PILImage.new("RGB", (2560, 1440), (255, 0, 0)).save(src, format="BMP")
-            png, w, h = shot_to_png(src, 1280)
+            png, w, h, original_w, original_h = shot_to_png(src, 1280)
             self.assertTrue(png[:8] == b"\x89PNG\r\n\x1a\n")
             self.assertEqual((w, h), (1280, 720))
-            png2, w2, h2 = shot_to_png(src, 0)
+            self.assertEqual((2560, 1440), (original_w, original_h))
+            png2, w2, h2, original_w2, original_h2 = shot_to_png(src, 0)
             self.assertEqual((w2, h2), (2560, 1440))
+            self.assertEqual((w2, h2), (original_w2, original_h2))
 
     def test_tga_input(self):
         from PIL import Image as PILImage
         with tempfile.TemporaryDirectory() as d:
             src = os.path.join(d, "osprey.tga")
             PILImage.new("RGB", (64, 32), (0, 255, 0)).save(src, format="TGA")
-            png, w, h = shot_to_png(src, 1280)
+            png, w, h, original_w, original_h = shot_to_png(src, 1280)
             self.assertEqual((w, h), (64, 32))
+            self.assertEqual((64, 32), (original_w, original_h))
             self.assertTrue(png[:8] == b"\x89PNG\r\n\x1a\n")
 
 
@@ -751,6 +754,139 @@ class TestToolsOverMemory(unittest.TestCase):
         with self.assertRaises(ToolError):
             mgr.send_key("w", "hold", 0)
 
+    def test_move_mouse_returns_plugin_coordinates(self):
+        fake_srv, mgr = self._input_manager({
+            "cli.mousemove absolute 640 360": "cli.mousemove: x=640 y=360",
+            "cli.mousemove relative -20 10": "cli.mousemove: x=620 y=370",
+            "cli.mousemove absolute 9999 -3": "cli.mousemove: x=1279 y=0",
+        })
+        try:
+            self.assertEqual("cli.mousemove: x=640 y=360", mgr.move_mouse(640, 360))
+            self.assertEqual("cli.mousemove: x=620 y=370", mgr.move_mouse(-20, 10, "relative"))
+            self.assertEqual("cli.mousemove: x=1279 y=0", mgr.move_mouse(9999, -3))
+        finally:
+            fake_srv.close()
+
+    def test_send_mouse_moves_before_click(self):
+        fake_srv, mgr = self._input_manager({
+            "cli.mousemove absolute 640 360": "cli.mousemove: x=640 y=360",
+        })
+        try:
+            reply = mgr.send_mouse(1, "tap", 0, x=640, y=360)
+            self.assertIn("x=640 y=360", reply)
+            self.assertEqual(["cli.mousemove absolute 640 360", "cli.trapmouse 1 1",
+                              "cli.trapmouse 0 0"], fake_srv.commands)
+        finally:
+            fake_srv.close()
+
+    def test_failed_move_does_not_click(self):
+        for reply in ("cli.mousemove: error: input injection failed (SDL event filtered)",
+                      "Unknown command: cli.mousemove",
+                      "cli.mousemove: x=invalid y=12", "cli.mousemove: x=-1 y=12"):
+            fake_srv, mgr = self._input_manager({"cli.mousemove absolute 10 12": reply})
+            try:
+                with self.subTest(reply=reply), self.assertRaises(ToolError):
+                    mgr.send_mouse(1, "tap", 0, x=10, y=12)
+                self.assertEqual(["cli.mousemove absolute 10 12"], fake_srv.commands)
+            finally:
+                fake_srv.close()
+
+    def test_mouse_validation_precedes_motion(self):
+        mgr = Manager()
+        with patch.object(mgr, "_trap_command") as command:
+            for kwargs in ({"x": 1}, {"y": 2}, {"x": 1, "y": 2, "mode": "bad"},
+                           {"x": 1.5, "y": 2}, {"x": True, "y": 2}, {"mode": "bad"}):
+                with self.subTest(kwargs=kwargs), self.assertRaises(ToolError):
+                    mgr.send_mouse(1, "tap", 0, **kwargs)
+            with self.assertRaises(ToolError):
+                mgr.send_mouse(1, "bad", 0, x=1, y=2)
+            for x in (2**31, -(2**31) - 1):
+                with self.subTest(x=x), self.assertRaises(ToolError):
+                    mgr.move_mouse(x, 0)
+            command.assert_not_called()
+
+    def test_move_mouse_mcp_validates_and_returns_coordinates(self):
+        from mcp import Client
+        fake_srv, mgr = self._input_manager({
+            "cli.mousemove relative -10 20": "cli.mousemove: x=30 y=50",
+            "cli.mousemove relative 640 360": "cli.mousemove: x=670 y=410",
+        })
+        try:
+            async def main():
+                async with Client(halflife_mcp.mcp) as client:
+                    good = await client.call_tool("move_mouse", {"x": -10, "y": 20, "mode": "relative"})
+                    self.assertFalse(good.is_error)
+                    self.assertIn("x=30 y=50", good.content[0].text)
+                    click = await client.call_tool("send_mouse", {"buttons": 1, "x": 640, "y": 360,
+                                                                  "mode": "relative", "hold_ms": 0})
+                    self.assertFalse(click.is_error)
+                    self.assertIn("x=670 y=410", click.content[0].text)
+                    missing_y = await client.call_tool("send_mouse", {"buttons": 1, "x": 10})
+                    self.assertTrue(missing_y.is_error)
+                    for arguments in ({"x": True, "y": 1}, {"x": 1.5, "y": 1},
+                                      {"x": 2**31, "y": 1}, {"x": 1, "y": 1, "mode": "bad"}):
+                        bad = await client.call_tool("move_mouse", arguments)
+                        self.assertTrue(bad.is_error, arguments)
+            with patch.object(halflife_mcp, "manager", mgr), patch.object(mgr, "shutdown"):
+                anyio.run(main)
+            self.assertEqual(["cli.mousemove relative -10 20", "cli.mousemove relative 640 360",
+                              "cli.trapmouse 1 1", "cli.trapmouse 0 0"], fake_srv.commands)
+        finally:
+            fake_srv.close()
+
+    def test_snapshot_reports_original_and_returned_dimensions(self):
+        import io
+        from unittest.mock import Mock
+        from PIL import Image as PILImage
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "source.bmp")
+            PILImage.new("RGB", (800, 600)).save(source)
+            mgr = Manager()
+            with patch.object(mgr, "_connection_locked", return_value=Mock()), \
+                    patch.object(mgr, "_target_locked", return_value=game_process.GameTarget(directory)), \
+                    patch.object(manager_module, "find_new_screenshot", return_value=source):
+                result = mgr.snapshot(400)
+            self.assertIn("original_size=(800,600)", result[1])
+            self.assertIn("returned_size=(400,300)", result[1])
+            with PILImage.open(io.BytesIO(result[0].data)) as image:
+                self.assertEqual((400, 300), image.size)
+
+    def test_input_sequences_do_not_interleave(self):
+        mgr = Manager()
+        commands = []
+        holding = threading.Event()
+        started = threading.Event()
+        finish_hold = threading.Event()
+        motion_done = threading.Event()
+
+        def command(cmd):
+            commands.append(cmd)
+            return "cli.mousemove: x=10 y=20" if cmd.startswith("cli.mousemove") else cmd
+
+        def hold(seconds):
+            holding.set()
+            self.assertTrue(finish_hold.wait(5))
+
+        def move():
+            started.set()
+            mgr.move_mouse(10, 20)
+            motion_done.set()
+
+        with patch.object(mgr, "_trap_command", side_effect=command), \
+                patch.object(manager_module.time, "sleep", hold):
+            tap = threading.Thread(target=lambda: mgr.send_key("w", "tap", 100))
+            tap.start()
+            self.assertTrue(holding.wait(5))
+            motion = threading.Thread(target=move)
+            motion.start()
+            self.assertTrue(started.wait(5))
+            self.assertFalse(motion_done.wait(0.1), "motion interleaved with a held tap")
+            finish_hold.set()
+            tap.join(5)
+            motion.join(5)
+            self.assertFalse(tap.is_alive() or motion.is_alive())
+        self.assertEqual(["cli.trapkey w 1", "cli.trapkey w 0", "cli.mousemove absolute 10 20"], commands)
+
     def test_usermsg_status_rejects_garbage(self):
         fake_srv = FakeRconServer(password="pw", echo=True)  # echoes, no report line
         try:
@@ -783,7 +919,7 @@ class TestStdioSmoke(unittest.TestCase):
                 tools = await client.list_tools()
                 names = {t.name for t in tools.tools}
                 expected = {"launch_game", "game_status", "run_command",
-                            "find_cvar", "send_key", "send_mouse",
+                            "find_cvar", "send_key", "send_mouse", "move_mouse",
                             "read_console", "snapshot", "quit_game",
                             "usermsg_status", "usermsg_messages", "usermsg_events",
                             "usermsg_set_display", "usermsg_reload_schema"}

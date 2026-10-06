@@ -35,6 +35,8 @@ from game_process import BANNER_TIMEOUT_S, QUIT_TIMEOUT_S
 from halflifecli.manager import (
     DEFAULT_COMMAND_MAX_LINES,
     DEFAULT_HOLD_MS,
+    INT32_MAX,
+    INT32_MIN,
     LAUNCH_TIMEOUT_CAP_S,
     MAX_HOLD_MS,
     MOUSE_BUTTONS_MASK,
@@ -69,7 +71,10 @@ INSTRUCTIONS = (
     "done. Use run_command for everything else; its output is capped at "
     "max_lines (default 200) and the full text of a capped command is saved to "
     "the file path it returns, so grep that file instead of raising the cap. "
-    "To press keys or mouse buttons in the game use send_key / send_mouse: they "
+    "To press keys or mouse buttons in the game use send_key / send_mouse. "
+    "For UI pointing use move_mouse, or send_mouse with x/y, measured in "
+    "snapshot's original_size pixels (returned_size describes the scaled image); "
+    "relative motion moves the UI cursor, not the view. Inputs "
     "enter through the engine's own input path, work with the window hidden or "
     "block_input on, and never touch other windows. Do not simulate input with "
     "Win32 SendInput / keybd_event / mouse_event or posted window messages. "
@@ -143,8 +148,18 @@ def send_key(
     action: Annotated[Literal["tap", "press", "release"], Field(description="tap = press, hold for hold_ms, release; press/release send one edge (e.g. hold +forward across other calls)")] = "tap",
     hold_ms: Annotated[int, Field(description="How long a tap keeps the key down", ge=0, le=MAX_HOLD_MS)] = DEFAULT_HOLD_MS,
 ) -> str:
-    """Inject through SDL_PushEvent or the original CGame::WindowProc, bypassing block_input. Keys need a native mapping; mouse keys share send_mouse's focus restrictions. Wheel press is a pulse; release is a no-op."""
+    """Inject through SDL_PushEvent or the original CGame::WindowProc, bypassing block_input. Keys need a native mapping; mouse keys share send_mouse's cursor/button state. Wheel press is a pulse; release is a no-op."""
     return manager.send_key(key, action, hold_ms)
+
+
+@mcp.tool()
+def move_mouse(
+    x: Annotated[int, Field(description="X position or delta in original screenshot pixels", strict=True, ge=INT32_MIN, le=INT32_MAX)],
+    y: Annotated[int, Field(description="Y position or delta in original screenshot pixels", strict=True, ge=INT32_MIN, le=INT32_MAX)],
+    mode: Annotated[Literal["absolute", "relative"], Field(description="absolute: from the game image's top left; relative: add x/y to the current cursor position")] = "absolute",
+) -> str:
+    """Move the UI cursor through SDL events (SDL2 engines), clamp to the image and return its absolute x/y. Use snapshot's original_size for coordinates; relative motion moves the UI cursor."""
+    return manager.move_mouse(x, y, mode)
 
 
 @mcp.tool()
@@ -152,9 +167,12 @@ def send_mouse(
     buttons: Annotated[int, Field(description="Mouse buttons to press: bitmask 1=left 2=right 4=middle 8=mouse4 16=mouse5", ge=1, le=MOUSE_BUTTONS_MASK)],
     action: Annotated[Literal["tap", "press", "release"], Field(description="tap = press, hold for hold_ms, release; release lifts every button")] = "tap",
     hold_ms: Annotated[int, Field(description="How long a tap keeps the buttons down", ge=0, le=MAX_HOLD_MS)] = DEFAULT_HOLD_MS,
+    x: Annotated[int | None, Field(description="Optional X position/delta in original screenshot pixels; provide both x and y", strict=True, ge=INT32_MIN, le=INT32_MAX)] = None,
+    y: Annotated[int | None, Field(description="Optional Y position/delta in original screenshot pixels; provide both x and y", strict=True, ge=INT32_MIN, le=INT32_MAX)] = None,
+    mode: Annotated[Literal["absolute", "relative"], Field(description="Coordinate mode when x/y are provided")] = "absolute",
 ) -> str:
-    """Inject native mouse-button transitions (no cursor motion), bypassing block_input. The held mask is authoritative. Client focus restrictions apply, including when using send_key("MOUSE1")."""
-    return manager.send_mouse(buttons, action, hold_ms)
+    """Optionally move the UI cursor, then inject native mouse-button transitions in one serialized call, bypassing block_input. The held mask is authoritative; release lifts every button. Coordinates use snapshot's original_size and are echoed after moving."""
+    return manager.send_mouse(buttons, action, hold_ms, x, y, mode)
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
@@ -170,7 +188,7 @@ def read_console(
 def snapshot(
     max_edge: Annotated[int, Field(description="Downscale so the longest side is this many px; 0 keeps the original size", ge=0, le=4096)] = DEFAULT_IMAGE_MAX_EDGE,
 ) -> list:
-    """Capture an in-game screenshot (engine `screenshot` command) and return it as a PNG image."""
+    """Capture an in-game screenshot (engine `screenshot` command) as a PNG plus original_size=(w,h) and returned_size=(w,h). Mouse coordinates use original pixels; scale displayed coordinates by original_size / returned_size."""
     return manager.snapshot(max_edge)
 
 
