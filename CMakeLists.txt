@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(halflife-cli LANGUAGES C CXX)
+project(halflife-cli LANGUAGES C CXX ASM_MASM)
 
 if(NOT WIN32)
 	message(FATAL_ERROR "halflife-cli only supports Windows.")
@@ -40,7 +40,8 @@ add_library(HalflifeCLI SHARED
 	src/input/input_lock.cpp
 	src/rcon/rcon_server.cpp
 	src/rcon/tcp_server.cpp
-	src/rcon/sven_udp.cpp
+	src/rcon/native_udp.cpp
+	src/rcon/shutdown_thunks.asm
 	src/window/window_manager.cpp
 	src/usermsg/usermsg_schema.cpp
 	src/usermsg/usermsg_decoder.cpp
@@ -51,6 +52,8 @@ add_library(HalflifeCLI SHARED
 )
 
 target_compile_features(HalflifeCLI PRIVATE cxx_std_20)
+# x86 links with /SAFESEH; the MASM thunks register no exception handlers.
+target_compile_options(HalflifeCLI PRIVATE $<$<COMPILE_LANGUAGE:ASM_MASM>:/safeseh>)
 
 target_include_directories(HalflifeCLI PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -72,10 +75,11 @@ target_include_directories(HalflifeCLI PRIVATE
 )
 
 if(MSVC)
+	# CRT and warning switches are compiler-only; ml.exe rejects them.
 	target_compile_options(HalflifeCLI PRIVATE
-		/MT$<$<CONFIG:Debug>:d>		# static CRT, the game must not need our redist
+		$<$<COMPILE_LANGUAGE:C,CXX>:/MT$<$<CONFIG:Debug>:d>>	# static CRT, the game must not need our redist
 		/W3
-		/wd4311 /wd4312 /wd4819 /wd4996	# pointer truncation / charset noise from MetaHookSv headers
+		"$<$<COMPILE_LANGUAGE:C,CXX>:/wd4311;/wd4312;/wd4819;/wd4996>"	# pointer truncation / charset noise from MetaHookSv headers
 	)
 	target_compile_definitions(HalflifeCLI PRIVATE
 		NOMINMAX
@@ -127,10 +131,10 @@ install(DIRECTORY "${HALFLIFECLI_GAMEDATA_DIR}/"
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(SvenRconPolicyTest tests/sven_policy_test.cpp)
-    target_compile_features(SvenRconPolicyTest PRIVATE cxx_std_20)
-    target_include_directories(SvenRconPolicyTest PRIVATE src "${METAHOOK_SOURCE_PATH}/include/HLSDK/common")
-    add_test(NAME SvenRconPolicy COMMAND SvenRconPolicyTest)
+    add_executable(RconPolicyTest tests/rcon_policy_test.cpp)
+    target_compile_features(RconPolicyTest PRIVATE cxx_std_20)
+    target_include_directories(RconPolicyTest PRIVATE src "${METAHOOK_SOURCE_PATH}/include/HLSDK/common")
+    add_test(NAME RconPolicy COMMAND RconPolicyTest)
     add_executable(UserMsgHookTest tests/usermsg_hook_test.cpp)
     target_include_directories(UserMsgHookTest PRIVATE src)
     add_test(NAME UserMsgHook COMMAND UserMsgHookTest)

@@ -14,7 +14,9 @@ namespace
 	constexpr int METAHOOK_API_GAMEDATA = 109;
 	// IGame::IsActiveApp is slot 10 of the engine's IGame interface
 	// (published as the address-less IGame_IsActiveApp record), so it is
-	// called through the CGame instance's own vtable.
+	// called through the CGame instance's own vtable. Every cataloged build
+	// keeps the slot; the flag it reads is this+4 or this+0x24 depending on
+	// the build, always the one AppActivate stores.
 	constexpr int IGAME_IS_ACTIVE_APP_SLOT = 10;
 
 	using AppActivate_t = void(__fastcall*)(void*, int, bool);

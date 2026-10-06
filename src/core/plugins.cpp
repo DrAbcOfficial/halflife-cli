@@ -128,6 +128,7 @@ void HUD_Init(void)
 	gExportfuncs.HUD_Init();
 
 	CliCommands::RegisterAll();
+	RconServer::RegisterCommands();
 
 	if (CLI_Config().developer > 0)
 		gEngfuncs.Cvar_SetValue("developer", (float)CLI_Config().developer);
@@ -152,7 +153,7 @@ void HUD_Frame(double time)
 	if (!RconServer::UsesMainFrame())
 	{
 		ConsoleBridge::PumpCommands();
-		// A failed Sven adapter (or legacy TCP) has no Cbuf hook. Report its
+		// A failed native UDP adapter (or Source TCP) has no Cbuf hook. Report its
 		// startup result once the game console is initialized on the first frame.
 		RconServer::AfterCommands();
 	}

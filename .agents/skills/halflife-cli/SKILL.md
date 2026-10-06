@@ -8,10 +8,13 @@ description: Operate, automate, and debug Sven Co-op / Half-Life through the hal
 halflife-cli turns the game into a controllable process: the render window is
 hidden off-screen (still rendering, so screenshots keep working), every stdin
 line is executed as a console command, all console output is mirrored to
-stdout. Windows x86 Sven 8948/10257 uses native GoldSrc UDP RCON on the
-engine's server socket, including at the menu. Other engines use Source TCP.
-Sven requires MetaHook API 115+ and the manifest-validated gamedata catalog;
-missing symbols fail startup without falling back to TCP.
+stdout. Windows x86 Sven 8948/10257, Half-Life 3248-10210 (and the mods on
+its engine) and Cry of Fear 5936 use native GoldSrc UDP RCON on the engine's
+server socket, including at the menu; this needs MetaHook API 115+ and the
+manifest-validated gamedata catalog. Sven never falls back to TCP; a GoldSrc
+build the catalog does not cover keeps Source TCP and prints
+`Native UDP unavailable (...); using Source TCP`. Once Native UDP is selected,
+missing symbols fail startup without falling back.
 
 ## Paths you will need
 
@@ -176,8 +179,9 @@ are TCP-only.
 - Never automatically retry an already-sent UDP command, particularly `map`
   or `quit`. New commands use a new socket/challenge to isolate late replies.
   An empty reply is valid. If quit gets no reply, wait for process exit first.
-- Other engines use `--protocol source-tcp`, retaining the 4096-byte response
-  limit, up to four connections, localhost default and prior password behavior.
+- The TCP backend uses `--protocol source-tcp`, retaining the 4096-byte
+  response limit, up to four connections, localhost default and prior password
+  behavior. The banner and `halflifecli.endpoint.json` name the protocol.
 
 **stdin (fire-and-forget).** Every line piped to stdin is queued and executed
 on the next frame. There is no per-command response framing on stdin — output
@@ -373,7 +377,9 @@ Source map (one src/ folder per responsibility), for code-level debugging:
 after execution), `src/console/output_capture.cpp` (console capture via
 VGUI2Extension GameConsole callbacks; no engine code hooks),
 `src/rcon/rcon_server.cpp` (backend selection, metadata, lifecycle),
-`src/rcon/sven_udp.cpp` (native Sven hooks, socket polling, redirect),
+`src/rcon/native_udp.cpp` (native UDP hooks per address layout, socket
+polling, redirect, HL 10210 fallbacks), `src/rcon/rcon_policy.h` (locality,
+allowlist, packet dispatch and failure-accounting rules),
 `src/rcon/tcp_server.cpp` (legacy Source TCP),
 `src/window/window_manager.cpp` (hide modes, window-level input fallback),
 `src/input/engine_input.cpp` (`block_input` SDL filter / CGame WindowProc hook,

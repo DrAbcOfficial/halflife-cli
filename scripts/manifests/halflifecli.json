@@ -2,7 +2,19 @@
   "schemaVersion": 1,
   "name": "halflifecli",
   "indexUrl": "https://hlnd2t.github.io/GoldSrc_VibeSignatures/gamesymbols/index.json",
-  "gameVersions": ["svencoop-8948", "svencoop-10257"],
+  "gameVersions": [
+    "cof-5936",
+    "hl-3248",
+    "hl-3266",
+    "hl-3329",
+    "hl-3647",
+    "hl-4554",
+    "hl-6153",
+    "hl-8684",
+    "hl-10210",
+    "svencoop-8948",
+    "svencoop-10257"
+  ],
   "symbols": {
     "engine": {
       "Cbuf_Execute": "function",
@@ -40,5 +52,11 @@
       "sizebuf_t_data_offset": "scalar",
       "sizebuf_t_cursize_offset": "scalar"
     }
+  },
+  "symbolExemptions": {
+    "SV_HandleRconPacket": ["hl-10210"],
+    "SV_CheckRconFailure": ["hl-10210"],
+    "SV_BeginRedirect": ["hl-10210"],
+    "SV_EndRedirect": ["hl-10210"]
   }
 }

@@ -6,9 +6,9 @@
 # The file is read once at plugin load, so a restart is required after editing.
 
 [rcon]
-# Non-Sven Source TCP backend only. Sven uses the engine's native UDP socket and
-# takes its port from the engine ip/hostport/port cvars or -port; these keys are
-# deprecated/ignored there.
+# Source TCP backend only. Native UDP engines (Sven, the cataloged Half-Life
+# builds, Cry of Fear) use the engine's own UDP socket and take its port from
+# the engine ip/hostport/port cvars or -port; these keys are ignored there.
 # port = 0                  # 0 = pick a random available port
 # bind = "127.0.0.1"        # localhost only by default
 password = ""               # empty = accept any password (the bind address still gates)

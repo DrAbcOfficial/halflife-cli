@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GoldSrc UDP (Sven) and Source TCP (legacy engines) RCON client.
+"""GoldSrc UDP (Native UDP engines) and Source TCP (other engines) RCON client.
 
 Protocol (little-endian): [size:int32][id:int32][type:int32][body][NUL][NUL],
 size = 10 + len(body). Types: AUTH=3, AUTH_RESPONSE=2 (response direction),

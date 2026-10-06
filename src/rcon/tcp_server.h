@@ -1,7 +1,7 @@
 #pragma once
 #include "rcon/rcon_server.h"
 
-// Original Source TCP backend, used only by non-Sven engines.
+// Original Source TCP backend, used by engines without a native UDP adapter.
 namespace TcpRcon
 {
     using StartResult = RconServer::StartResult;

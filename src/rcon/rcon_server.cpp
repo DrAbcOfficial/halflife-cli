@@ -1,5 +1,5 @@
 #include "rcon/rcon_server.h"
-#include "rcon/sven_udp.h"
+#include "rcon/native_udp.h"
 #include "rcon/tcp_server.h"
 #include "core/plugins.h"
 #include "config/config.h"
@@ -12,12 +12,13 @@
 
 namespace
 {
-    bool g_sven = false;
+    bool g_native = false;
     bool g_ready = false;
     bool g_attempted = false;
     bool g_stopping = false;
     bool g_prepared = false;
     std::string g_error;
+    std::string g_tcpReason; // why a GoldSrc engine keeps Source TCP
     std::string g_directory;
 
     unsigned long long ProcessStart()
@@ -68,17 +69,21 @@ namespace
         g_attempted = true;
         const auto& config = CLI_Config();
         RconServer::StartResult result;
-        if (g_sven)
+        if (g_native)
         {
             if (!g_error.empty())
                 result.error = g_error;
             else
-                result = SvenUdp::Start(config.rcon_password, config.rcon_allowed_ips);
+                result = NativeUdp::Start(config.rcon_password, config.rcon_allowed_ips);
             if (config.rcon_legacy_binding)
-                Report("halflife-cli: Sven ignores [rcon].bind/port; use engine ip/ip_hostport/hostport/port or -port");
+                Report("halflife-cli: Native UDP ignores [rcon].bind/port; use the engine ip/hostport/port cvars or -port");
         }
         else
+        {
+            if (!g_tcpReason.empty())
+                Report("halflife-cli: Native UDP unavailable (" + g_tcpReason + "); using Source TCP");
             result = TcpRcon::Start(config.rcon_bind, static_cast<unsigned short>(config.rcon_port), config.rcon_password, config.rcon_allowed_ips);
+        }
         if (result.ok)
         {
             // Publish metadata last: clients never infer readiness from port alone.
@@ -86,7 +91,7 @@ namespace
             {
                 result.ok = false;
                 result.error = "could not publish RCON endpoint metadata";
-                if (g_sven) SvenUdp::Stop(); else TcpRcon::Shutdown();
+                if (g_native) NativeUdp::Stop(); else TcpRcon::Shutdown();
             }
         }
         if (!result.ok)
@@ -111,9 +116,10 @@ namespace RconServer
         if (g_prepared)
             return;
         g_prepared = true;
-        g_sven = g_iEngineType == ENGINE_SVENGINE;
         g_ready = g_attempted = g_stopping = false;
         g_error.clear();
+        g_tcpReason.clear();
+        g_native = NativeUdp::Selected(g_tcpReason);
         const char* gameDir = g_pMetaHookAPI->GetGameDirectory();
         if (gameDir && *gameDir)
         {
@@ -123,8 +129,13 @@ namespace RconServer
         Publish(CLI_Config().rcon ? "initializing" : "disabled");
         if (!g_directory.empty())
             DeleteFileA((g_directory + "/halflifecli.port").c_str());
-        if (g_sven && CLI_Config().rcon)
-            SvenUdp::Install(g_error);
+        if (g_native && CLI_Config().rcon)
+            NativeUdp::Install(g_error);
+    }
+    void RegisterCommands()
+    {
+        if (g_native)
+            NativeUdp::RegisterCommands();
     }
     void OnClientReady()
     {
@@ -136,8 +147,8 @@ namespace RconServer
         if (g_stopping)
             return;
         g_stopping = true;
-        SvenUdp::Stop();
-        if (!g_sven) TcpRcon::Shutdown();
+        NativeUdp::Stop();
+        if (!g_native) TcpRcon::Shutdown();
         Publish("stopped");
         if (!g_directory.empty())
             DeleteFileA((g_directory + "/halflifecli.port").c_str());
@@ -145,17 +156,17 @@ namespace RconServer
     void Shutdown()
     {
         OnEngineShutdown();
-        SvenUdp::Uninstall();
+        NativeUdp::Uninstall();
         g_prepared = false;
     }
-    bool UsesMainFrame() { return SvenUdp::Installed(); }
-    bool Running() { return g_sven ? SvenUdp::Running() : TcpRcon::Running(); }
-    unsigned short CurrentPort() { return Running() ? (g_sven ? SvenUdp::CurrentPort() : TcpRcon::CurrentPort()) : 0; }
-    std::string CurrentAddress() { return g_sven ? SvenUdp::CurrentAddress() : CLI_Config().rcon_bind; }
-    const char* Protocol() { return g_sven ? "goldsrc-udp" : "source-tcp"; }
+    bool UsesMainFrame() { return NativeUdp::Installed(); }
+    bool Running() { return g_native ? NativeUdp::Running() : TcpRcon::Running(); }
+    unsigned short CurrentPort() { return Running() ? (g_native ? NativeUdp::CurrentPort() : TcpRcon::CurrentPort()) : 0; }
+    std::string CurrentAddress() { return g_native ? NativeUdp::CurrentAddress() : CLI_Config().rcon_bind; }
+    const char* Protocol() { return g_native ? "goldsrc-udp" : "source-tcp"; }
     bool PasswordSet()
     {
-        return g_sven && Running() ? gEngfuncs.pfnGetCvarString("rcon_password")[0] != 0 : !CLI_Config().rcon_password.empty();
+        return g_native && Running() ? gEngfuncs.pfnGetCvarString("rcon_password")[0] != 0 : !CLI_Config().rcon_password.empty();
     }
     const std::string& Error() { return g_error; }
 }

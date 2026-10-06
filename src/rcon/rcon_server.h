@@ -2,8 +2,10 @@
 
 #include <string>
 
-// Sven uses the engine's native UDP socket. Other engines retain Source TCP.
-// A failed Sven capability check never falls back to TCP.
+// SvEngine and the verified GoldSrc/CoF builds use the engine's native UDP
+// socket; other engines (and a GoldSrc build the catalog does not cover) keep
+// Source TCP. Once native UDP is selected, a failed capability check never
+// falls back to TCP.
 namespace RconServer
 {
 	struct StartResult
@@ -14,6 +16,7 @@ namespace RconServer
 	};
 
 		void Install(); // LoadEngine: resolve every capability before installing hooks
+		void RegisterCommands(); // HUD_Init
 		void OnClientReady();
 		void AfterCommands(); // called only from the verified main-frame Cbuf call
 		void OnEngineShutdown(); // before Host_Shutdown / NET_Shutdown

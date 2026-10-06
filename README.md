@@ -4,8 +4,9 @@ A [MetaHookSv](https://github.com/hzqst/MetaHookSv) plugin that turns
 Half-Life / Sven Co-op into a CLI-driven program for automated testing or agent operation:
 the game window is hidden (but alive, so `screenshot` keeps working), a CLI
 console is exposed and commands come in through stdin. On Windows x86 Sven
-Co-op, Native GoldSrc UDP RCON shares the engine's server socket, including at
-the main menu. Other engines retain the independent Source TCP backend.
+Co-op, Half-Life (and the mods sharing its engine) and Cry of Fear, Native
+GoldSrc UDP RCON shares the engine's server socket, including at the main menu.
+Other engines retain the independent Source TCP backend.
 
 ## Build
 
@@ -46,12 +47,41 @@ symbols in `build/metahook/gamedata/halflifecli/`. A catalog missing required
 symbols fails the build and installation. `GOLDSRC_VIBESIGNATURES_INDEX_URL`
 can select a mirror; it must satisfy the same manifest and integrity checks.
 
-Native UDP currently supports **Windows x86 Sven 8948 and 10257 only**, with
-MetaHook API **115+** and a catalog containing the lifecycle symbols delivered
-by [GoldSrc_VibeSignatures PR #331](https://github.com/HLND2T/GoldSrc_VibeSignatures/pull/331).
-Linux, HL25 and other GoldSrc variants have no Native UDP adapter here. A Sven
-initialization failure reports its missing symbol/category or layout; it never
-silently selects TCP. See [verification evidence](docs/native-rcon-verification.md)
+Native UDP needs MetaHook API **115+** and covers every Windows x86 engine
+build the manifest declares (`gameVersions` in
+`scripts/manifests/halflifecli.json`, symbols from
+[GoldSrc_VibeSignatures #326](https://github.com/HLND2T/GoldSrc_VibeSignatures/issues/326)
+and [PR #331](https://github.com/HLND2T/GoldSrc_VibeSignatures/pull/331)):
+
+| Engine | Builds | Address layout | Notes |
+| --- | --- | --- | --- |
+| SvEngine | 8948, 10257 | 36-byte `netadr` | |
+| GoldSrc (HL, CS, CZ, OP4, BS, ...) | 3248, 3266, 3329, 3647 (BLOB), 4554, 6153, 8684, 10210 | 20-byte `netadr_t` | 10210 inlines four helpers, see below |
+| Cry of Fear | 5936 | 20-byte `netadr_t` | |
+
+cstrike/czero/czeror snapshots carry no engine module: those mods run on the
+Half-Life `hw.dll` of the same build and use its record. The adapter is
+instantiated per address layout, and the C++ build list in
+`src/rcon/native_udp.cpp` keeps an unverified build away from the catalog even
+when another plugin's catalog matches it. Linux has no adapter.
+
+Half-Life 10210 (Windows) keeps `SV_HandleRconPacket`, `SV_CheckRconFailure`,
+`SV_BeginRedirect` and `SV_EndRedirect` only inline, so the manifest exempts
+them for that build and the plugin supplies the behavior itself: redirects are
+driven through the published `sv_redirected`/`sv_redirectto`/`outputbuf`
+state; failure accounting is a plugin table with the native semantics
+(`sv_rcon_minfailures`/`maxfailures`/`minfailuretime`, ban through `addip`,
+cleared by `resetrcon`); and menu packets are tokenized by the engine's own
+`Cmd_ExecuteString` through the internal `cli._rconpacket` command, which then
+calls the native challenge/rcon paths with the native `Cmd_Argv`. Typed into a
+console the command does nothing.
+
+Sven selects Native UDP unconditionally; its initialization failure reports
+the missing symbol/category or layout and never silently selects TCP. A
+GoldSrc build selects it when the build is listed and the catalog covers its
+`hw.dll`; otherwise it keeps Source TCP and the console says why
+(`Native UDP unavailable (...); using Source TCP`). Once selected, a failure
+never falls back to TCP. See [verification evidence](docs/native-rcon-verification.md)
 for the distinction between static coverage and actual game runs.
 
 
@@ -216,14 +246,16 @@ take a minute.
   console line (see below). `cli.usermsg` reports the hook state;
   `cli.usermsg on|off|reload|list|pending|<name>` controls it.
 - **RCON**: `python mcp/rcon_client.py --protocol goldsrc-udp <host> <port> <password> "cmd" ...`
-  for Sven; select `--protocol source-tcp` for other engines. External Sven
-  clients must speak GoldSrc challenge-based UDP, not Source TCP.
+  on Native UDP engines; select `--protocol source-tcp` for the TCP backend.
+  External clients of a Native UDP engine must speak GoldSrc challenge-based
+  UDP, not Source TCP.
   `cli.rconinfo` reports protocol, actual binding, state and password presence.
 
-Sven binding is selected by the engine (`ip`, `ip_hostport`, `hostport`, `port`,
-and `-port`), after startup configuration executes. The plugin does not rebind
-or own the socket. Old `[rcon].bind` and `.port` keys produce a deprecation
-notice and are ignored on Sven; they retain their old semantics on TCP.
+Native UDP binding is selected by the engine (`ip`, `hostport`, `port`, Sven's
+`ip_hostport`, and `-port`), after startup configuration executes. The plugin
+does not rebind or own the socket. Old `[rcon].bind` and `.port` keys produce a
+deprecation notice and are ignored on Native UDP; they retain their old
+semantics on TCP.
 The configured password is assigned to `rcon_password` once at startup;
 subsequent engine cvar changes take precedence. Empty passwords are accepted
 only while CLI RCON is running, from `NA_LOOPBACK` or exactly `127.0.0.1`, and
@@ -343,9 +375,9 @@ through the engine's client command entry. `install_plugin.bat` ensures
 
 ```toml
 [rcon]
-password = ""               # Sven: empty only permits exact localhost, subject to allowed_ips
+password = ""               # Native UDP: empty only permits exact localhost, subject to allowed_ips
 allowed_ips = ""            # comma-separated IPv4 allowlist; empty = no additional address restriction
-# Non-Sven Source TCP only (deprecated/ignored on Sven):
+# Source TCP only (deprecated/ignored on Native UDP):
 # port = 0                  # independent ephemeral TCP port
 # bind = "127.0.0.1"
 
@@ -386,8 +418,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The gamedata catalog is Sven-only: the native UDP RCON backend is built on
-Sven's `sv.dll` RCON symbols, which do not exist in the `hl-*`/`cstrike-*`
-GoldSrc snapshots. Half-Life and Counter-Strike load the plugin without
-gamedata and use the independent Source TCP RCON backend (see
-`src/rcon/rcon_server.cpp`).
+The gamedata catalog covers every engine version in the manifest (about 11 KB
+per pruned snapshot): Native UDP RCON and the focus lock resolve their
+`hw.dll` symbols from it. An engine build outside it loads the plugin and uses
+the independent Source TCP RCON backend (see `src/rcon/rcon_server.cpp`).
