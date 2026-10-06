@@ -19,8 +19,8 @@ hide_window = 1             # 0 = off, 1 = move off-screen (default), 2 = ShowWi
 developer = 1               # set the "developer" cvar so verbose engine output flows
 capture = true              # capture console output via VGUI2Extension GameConsole callbacks
 console = true              # CLI console bridge: stdin commands + stdout mirror
-block_input = false         # true = ignore the physical keyboard/mouse (cli.blockinput toggles at runtime)
-input_lock = false          # true = stop the mouse from driving the view (cli.inputlock toggles at runtime)
+block_input = true          # true = ignore the physical keyboard/mouse (cli.blockinput toggles at runtime)
+input_lock = true           # true = stop the mouse from driving the view (cli.inputlock toggles at runtime)
 focus_lock = true           # keep the game internally active while unfocused/hidden (cli.focuslock toggles at runtime)
 console_topmost = false     # keep the CLI console window always on top
 rcon = true                 # false leaves native engine networking/authentication untouched
