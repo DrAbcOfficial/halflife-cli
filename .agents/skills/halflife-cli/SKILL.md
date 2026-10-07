@@ -28,7 +28,7 @@ missing symbols fail startup without falling back.
 | Config file | `<game>\<mod>\metahook\configs\halflifecli\halflifecli.toml` |
 | Game dir config | `<repo>\mcp\game_dir.txt` for the Python tooling, `<repo>\scripts\game_dir.txt` for the `.bat` launchers (one line each, machine-local, gitignored) |
 | RCON client / acceptance test / locator | `mcp\rcon_client.py`, `mcp\acceptance_test.py`, `mcp\find_game.py` in this repo |
-| MCP server | `mcp\halflife_mcp.py` (stdio; run with `uv run --script`), registered via `.mcp.json` |
+| MCP server | `mcp\halflife_mcp.py` (stdio; run with `uv run --script`), registered per machine at user scope (`claude mcp add -s user` / `codex mcp add`) |
 
 ## Resolve the game directory first
 

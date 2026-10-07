@@ -211,10 +211,34 @@ pip install "mcp>=2.2,<3" pillow pywin32
 python mcp\halflife_mcp.py
 ```
 
-Claude Code picks up the committed [`.mcp.json`](.mcp.json) automatically when
-the repo is opened (it asks for approval the first time); register it elsewhere
-with `claude mcp add`. The first `uv run` downloads the dependencies, which can
-take a minute.
+### Registering the server
+
+No client config file is committed: the script path is machine-local, so
+registering the server is an installation step on the machine that built the
+checkout, not something the repository can carry. Register it at **user scope**
+so it stays available in every project, with an absolute path to this checkout:
+
+```bat
+claude mcp add -s user halflife -- uv run --script D:\halflife-cli\mcp\halflife_mcp.py
+codex mcp add halflife -- uv run --script D:\halflife-cli\mcp\halflife_mcp.py
+```
+
+Both write that machine's own client config, and `claude mcp remove -s user
+halflife` / `codex mcp remove halflife` undo them. The absolute path is
+required rather than cosmetic: a relative path is resolved against the
+directory the client was started from, so it would only work when that happens
+to be the repository root. The script itself is cwd-independent — it finds its
+package and the repository root through `__file__`.
+
+Easiest is to let an agent do it — paste this into Claude Code or Codex from
+anywhere:
+
+> Register the halflife MCP server at user scope: run `uv run --script <abs
+> path to this checkout>\mcp\halflife_mcp.py` through `claude mcp add -s user
+> halflife` (or `codex mcp add halflife`), then confirm with `claude mcp list`
+> / `codex mcp list` that it is enabled.
+
+The first `uv run` downloads the dependencies, which can take a minute.
 
 ## Using it
 - **stdin**: every line is executed as a game console command (`status`,
