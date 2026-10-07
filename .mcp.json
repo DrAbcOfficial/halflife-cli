@@ -2,7 +2,7 @@
   "mcpServers": {
     "halflife": {
       "command": "uv",
-      "args": ["run", "--script", "${CLAUDE_PROJECT_DIR:-.}/mcp/halflife_mcp.py"]
+      "args": ["run", "--script", "mcp/halflife_mcp.py"]
     }
   }
 }
