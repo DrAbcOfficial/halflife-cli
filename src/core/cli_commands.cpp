@@ -2,8 +2,10 @@
 
 #include "config/config.h"
 #include "console/console_bridge.h"
+#include "console/output_capture.h"
 #include "core/plugins.h"
 #include "input/engine_input.h"
+#include "input/focus_lock.h"
 #include "input/input_lock.h"
 #include "rcon/rcon_server.h"
 #include "usermsg/usermsg_monitor.h"
@@ -18,37 +20,49 @@
 #include <set>
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 namespace
 {
+	void Reply(const std::string& message)
+	{
+		gEngfuncs.Con_Printf("%s\n", message.c_str());
+		if (!OutputCapture::Available())
+			ConsoleBridge::WriteOut(message);
+	}
 	void Cmd_CliHelp(void)
 	{
 		// routed through the hooked engine Con_Printf: doubles as an execution probe
 		gEngfuncs.Con_Printf("cli.help executed (halflife-cli)\n");
-		ConsoleBridge::WriteOut("halflife-cli commands:");
-		ConsoleBridge::WriteOut("  cli.rconinfo        - show RCON endpoint info");
-		ConsoleBridge::WriteOut("  cli.window <0|1|2>  - 0=show 1=off-screen(default) 2=SW_HIDE");
-		ConsoleBridge::WriteOut("  cli.inputlock on|off - lock the mouse cursor so it stops driving the view");
-		ConsoleBridge::WriteOut("  cli.blockinput on|off - make the game ignore the physical keyboard and mouse buttons");
-		ConsoleBridge::WriteOut("  cli.trapkey <key> <0|1> - send a key event through native engine input");
-		ConsoleBridge::WriteOut("  cli.trapmouse <buttons> <0|1> - send a mouse button event through native engine input");
-		ConsoleBridge::WriteOut("  cli.find <name>     - check cvar/command existence, suggests similar names");
-		ConsoleBridge::WriteOut("  cli.usermsg         - UserMsg monitor: on|off|reload|list|pending|<name>");
-		ConsoleBridge::WriteOut("  cli.help            - this help");
-		ConsoleBridge::WriteOut("any other line is executed as a game console command (e.g. 'status', 'snapshot')");
+		Reply("halflife-cli commands:");
+		Reply("  cli.rconinfo        - show RCON endpoint info");
+		Reply("  cli.window <0|1|2>  - 0=show 1=off-screen(default) 2=SW_HIDE");
+		Reply("  cli.inputlock on|off - lock the mouse cursor so it stops driving the view");
+		Reply("  cli.focuslock on|off - keep the game internally active when unfocused");
+		Reply("  cli.blockinput on|off - make the game ignore the physical keyboard and mouse buttons");
+		Reply("  cli.trapkey <key> <0|1> - send a key event through native engine input");
+		Reply("  cli.trapmouse <buttons> <0|1> - send a mouse button event through native engine input");
+		Reply("  cli.mousemove [absolute|relative <x> <y>] - move/query the UI cursor in original screenshot pixels");
+		Reply("  cli.find <name>     - check cvar/command existence, suggests similar names");
+		Reply("  cli.usermsg         - UserMsg monitor: on|off|reload|list|pending|<name>");
+		Reply("  cli.help            - this help");
+		Reply("any other line is executed as a game console command (e.g. 'status', 'snapshot')");
 	}
 
 	void Cmd_CliRconInfo(void)
 	{
-		char buf[256];
+		char buf[768];
 		_snprintf_s(buf, sizeof(buf), _TRUNCATE,
-			"RCON bind=%s port=%u password=%s",
-			CLI_Config().rcon_bind.c_str(), RconServer::CurrentPort(),
-			CLI_Config().rcon_password.empty() ? "none" : "set");
-		ConsoleBridge::WriteOut(buf);
+			"RCON protocol=%s status=%s bind=%s port=%u password=%s%s%s",
+			RconServer::Protocol(), RconServer::Running() ? "ready" : "inactive",
+			RconServer::CurrentAddress().c_str(), RconServer::CurrentPort(),
+			RconServer::PasswordSet() ? "set" : "none",
+			RconServer::Error().empty() ? "" : " error=", RconServer::Error().c_str());
+		Reply(buf);
 	}
 
 	void Cmd_CliWindow(void)
@@ -59,11 +73,11 @@ namespace
 			_snprintf_s(buf, sizeof(buf), _TRUNCATE,
 				"cli.window mode = %d (0=show 1=offscreen 2=hide) block_input=%s",
 				WindowManager::GetMode(), EngineInput::GetBlockInput() ? "on" : "off");
-			ConsoleBridge::WriteOut(buf);
+			Reply(buf);
 			return;
 		}
 		WindowManager::SetMode(atoi(gEngfuncs.Cmd_Argv(1)));
-		ConsoleBridge::WriteOut("cli.window applied");
+		Reply("cli.window applied");
 	}
 
 	void Cmd_CliInputLock(void)
@@ -73,8 +87,8 @@ namespace
 			unsigned getCalls = 0, setCalls = 0, relCalls = 0, warpCalls = 0, motionCalls = 0;
 			int lastDx = 0, lastDy = 0;
 			InputLock::GetHookStats(getCalls, setCalls, relCalls, warpCalls, motionCalls, lastDx, lastDy);
-			gEngfuncs.Con_Printf("cli.inputlock: %s (hooks=%s, calls: get=%u set=%u rel=%u warp=%u motion=%u last=(%d,%d))\n",
-				InputLock::GetActive() ? "on" : "off",
+			gEngfuncs.Con_Printf("cli.inputlock: %s (focus guard=%s, hooks=%s, calls: get=%u set=%u rel=%u warp=%u motion=%u last=(%d,%d))\n",
+				InputLock::GetActive() ? "on" : "off", FocusLock::ForcingActivation() ? "on" : "off",
 				InputLock::HooksInstalled() ? "installed" : "missing (client does not import cursor calls)",
 				getCalls, setCalls, relCalls, warpCalls, motionCalls, lastDx, lastDy);
 			return;
@@ -117,6 +131,64 @@ namespace
 		{
 			gEngfuncs.Con_Printf("usage: cli.blockinput [on|off] - make the game ignore the physical keyboard and mouse buttons\n");
 		}
+	}
+
+	void Cmd_CliFocusLock(void)
+	{
+		const char* arg = gEngfuncs.Cmd_Argc() == 2 ? gEngfuncs.Cmd_Argv(1) : nullptr;
+		if (gEngfuncs.Cmd_Argc() > 2 || (arg && _stricmp(arg, "on") && _stricmp(arg, "off")))
+		{
+			gEngfuncs.Con_Printf("usage: cli.focuslock [on|off] - keep the game internally active when unfocused\n");
+			return;
+		}
+		if (arg)
+			FocusLock::SetActive(!_stricmp(arg, "on"));
+		const char* state = FocusLock::GetActive() ? "on" : "off";
+		if (!FocusLock::Available())
+		{
+			gEngfuncs.Con_Printf("cli.focuslock: %s unavailable (%s)\n", state, FocusLock::Error());
+			return;
+		}
+		bool active = false;
+		gEngfuncs.Con_Printf("cli.focuslock: %s engine_active=%s\n", state,
+			FocusLock::EngineActive(active) ? (active ? "1" : "0") : "unknown");
+	}
+
+	bool ParseCoordinate(const char* text, int& coordinate)
+	{
+		char* end = nullptr;
+		errno = 0;
+		long value = strtol(text, &end, 10);
+		if (end == text || *end != '\0' || errno == ERANGE || value < INT_MIN || value > INT_MAX)
+			return false;
+		coordinate = static_cast<int>(value);
+		return true;
+	}
+
+	void Cmd_CliMouseMove(void)
+	{
+		int x = 0, y = 0;
+		if (gEngfuncs.Cmd_Argc() != 1)
+		{
+			bool relative = !_stricmp(gEngfuncs.Cmd_Argv(1), "relative");
+			if (gEngfuncs.Cmd_Argc() != 4 || (!relative && _stricmp(gEngfuncs.Cmd_Argv(1), "absolute")) ||
+				!ParseCoordinate(gEngfuncs.Cmd_Argv(2), x) || !ParseCoordinate(gEngfuncs.Cmd_Argv(3), y))
+			{
+				gEngfuncs.Con_Printf("usage: cli.mousemove [absolute|relative <x> <y>] - original screenshot pixels\n");
+				return;
+			}
+			if (!EngineInput::MoveMouse(x, y, relative))
+			{
+				gEngfuncs.Con_Printf("cli.mousemove: error: input injection failed (%s)\n", EngineInput::EngineHooksError());
+				return;
+			}
+		}
+		if (!EngineInput::GetMousePosition(x, y))
+		{
+			gEngfuncs.Con_Printf("cli.mousemove: error: cursor unavailable (%s)\n", EngineInput::EngineHooksError());
+			return;
+		}
+		gEngfuncs.Con_Printf("cli.mousemove: x=%d y=%d\n", x, y);
 	}
 
 	// The <0|1> "down" argument shared by cli.trapkey / cli.trapmouse.
@@ -174,7 +246,11 @@ namespace
 			gEngfuncs.Con_Printf("cli.trapmouse: error: input injection failed (%s)\n", EngineInput::EngineHooksError());
 			return;
 		}
-		gEngfuncs.Con_Printf("cli.trapmouse: buttons=%ld %s\n", buttons, down ? "down" : "up");
+		int x = 0, y = 0;
+		if (EngineInput::GetMousePosition(x, y))
+			gEngfuncs.Con_Printf("cli.trapmouse: buttons=%ld %s x=%d y=%d\n", buttons, down ? "down" : "up", x, y);
+		else
+			gEngfuncs.Con_Printf("cli.trapmouse: buttons=%ld %s\n", buttons, down ? "down" : "up");
 	}
 
 	// Plain Levenshtein distance; cvar/command names are short so O(len*len) is fine.
@@ -311,9 +387,11 @@ void CliCommands::RegisterAll()
 	gEngfuncs.pfnAddCommand("cli.rconinfo", Cmd_CliRconInfo);
 	gEngfuncs.pfnAddCommand("cli.window", Cmd_CliWindow);
 	gEngfuncs.pfnAddCommand("cli.inputlock", Cmd_CliInputLock);
+	gEngfuncs.pfnAddCommand("cli.focuslock", Cmd_CliFocusLock);
 	gEngfuncs.pfnAddCommand("cli.blockinput", Cmd_CliBlockInput);
 	gEngfuncs.pfnAddCommand("cli.trapkey", Cmd_CliTrapKey);
 	gEngfuncs.pfnAddCommand("cli.trapmouse", Cmd_CliTrapMouse);
+	gEngfuncs.pfnAddCommand("cli.mousemove", Cmd_CliMouseMove);
 	gEngfuncs.pfnAddCommand("cli.find", Cmd_CliFind);
 	gEngfuncs.pfnAddCommand("cli.usermsg", Cmd_CliUserMsg);
 }

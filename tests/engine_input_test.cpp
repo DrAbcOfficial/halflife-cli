@@ -1,15 +1,41 @@
 // Standalone Win32 regression harness; uses the game's real SDL2.dll and a
 // recording CGame::WindowProc trampoline. No game or OS input is generated.
 #include "../src/input/engine_input.cpp"
+#include <climits>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
+// A 400x300 game window showing an 800x600 video mode: screenshot pixels
+// are twice the window's.
+static int windowWidth = 400, windowHeight = 300;
+static DWORD FakeGetVideoMode(int* width, int* height, int*, bool*)
+{
+	if (width) *width = 800;
+	if (height) *height = 600;
+	return VIDEOMODE_OPENGL;
+}
+static HMODULE FakeGetEngineModule() { return nullptr; }
+static BlobHandle_t FakeGetBlobEngineModule() { return nullptr; }
+static metahook_api_t fakeAPI = [] {
+	metahook_api_t api{};
+	api.GetVideoMode = FakeGetVideoMode;
+	api.GetEngineModule = FakeGetEngineModule;
+	api.GetBlobEngineModule = FakeGetBlobEngineModule;
+	return api;
+}();
 mh_interface_t* g_pInterface = nullptr;
-metahook_api_t* g_pMetaHookAPI = nullptr;
+metahook_api_t* g_pMetaHookAPI = &fakeAPI;
 namespace WindowManager
 {
 	void SetInputDisabled(bool) {}
 	void* GetGameWindow() { return (void*)1; }
+	bool GetClientSize(int& width, int& height) { width = windowWidth; height = windowHeight; return true; }
+}
+// The engine's imports are absent here; the harness calls the hooks itself.
+namespace ImportHook
+{
+	bool Hook(HMODULE, BlobHandle_t, const char*, const char*, void*) { return false; }
 }
 
 static int failures = 0;
@@ -102,8 +128,103 @@ int wmain(int argc, wchar_t** argv)
 	physical.type = SDL_KEYDOWN;
 	CHECK(gPrivateFuncs.SDL_PushEvent(&physical) == 1);
 	CHECK(next().type == SDL_KEYDOWN);
+
+	// Virtual UI cursor. Coordinates are 800x600 screenshot pixels on a
+	// 400x300 window; the engine dispatches what its SDL_PollEvent /
+	// SDL_WaitEventTimeout imports return.
+	int mx = -1, my = -1;
+	CHECK(!EngineInput::MoveMouse(10, 10, false));
+	CHECK(!strcmp(EngineInput::EngineHooksError(), "engine SDL mouse imports not hooked"));
+	g_hookedMouseState = g_hookedPollEvent = g_hookedWaitEvent = true;
+	drain();
+	CHECK(EngineInput::MoveMouse(400, 300, false));
+	event = SDLEvent{};
+	CHECK(Hooked_SDLPollEvent(&event) == 1);
+	std::printf("motion roundtrip: type=0x%x which=0x%x x=%d y=%d xrel=%d yrel=%d\n", event.type,
+		event.motion.which, event.motion.x, event.motion.y, event.motion.xrel, event.motion.yrel);
+	CHECK(event.type == SDL_MOUSEMOTION && IsInjectedMouseMotion(event));
+	CHECK(event.motion.x == 200 && event.motion.y == 150);
+	CHECK(g_dispatchingInjectedMotion);
+	CHECK(EngineInput::WarpVirtualMouse(10, 10)); // the engine's recentre while dispatching
+	CHECK(Hooked_SDLPollEvent(&event) == 0);       // ...was swallowed, nothing queued
+	CHECK(!g_dispatchingInjectedMotion);
+	CHECK(EngineInput::GetMousePosition(mx, my) && mx == 400 && my == 300);
+	Hooked_SDLGetMouseState(&mx, &my);
+	CHECK(mx == 200 && my == 150);                  // engine queries see window coordinates
+	CHECK(EngineInput::MoveMouse(-40, 20, true));
+	CHECK(Hooked_SDLPollEvent(&event) == 1 && event.motion.xrel == -20 && event.motion.yrel == 10);
+	CHECK(EngineInput::GetMousePosition(mx, my) && mx == 360 && my == 320);
+	CHECK(EngineInput::MoveMouse(INT_MAX, INT_MIN, true));
+	CHECK(EngineInput::GetMousePosition(mx, my) && mx == 798 && my == 0); // last representable window pixel
+	drain();
+	CHECK(Hooked_SDLPollEvent(&event) == 0 && !g_dispatchingInjectedMotion); // the engine's next poll ends dispatch
+
+	// A button carries the virtual position and our device id.
+	CHECK(EngineInput::MoveMouse(100, 200, false));
+	drain();
+	CHECK(EngineInput::SendMouse(1, true));
+	event = next();
+	CHECK(event.type == SDL_MOUSEBUTTONDOWN && event.button.x == 50 && event.button.y == 100);
+	CHECK(EngineInput::SendMouse(0, false));
+	drain();
+
+	// A virtual warp outside injected dispatch moves the virtual cursor only.
+	CHECK(EngineInput::WarpVirtualMouse(200, 150));
+	CHECK(Hooked_SDLPollEvent(&event) == 1 && event.motion.x == 200 && event.motion.y == 150);
+	CHECK(EngineInput::GetMousePosition(mx, my) && mx == 400 && my == 300);
+
+	// A queued motion is rebased when the window is resized before dispatch.
+	// SDL3 ends each poll cycle at a sentinel event; start a fresh queue.
+	drain();
+	CHECK(EngineInput::MoveMouse(700, 500, false));
+	windowWidth = 800, windowHeight = 600;
+	CHECK(Hooked_SDLPollEvent(&event) == 1 && event.motion.x == 700 && event.motion.y == 500);
+	CHECK(event.motion.xrel == 300 && event.motion.yrel == 200);
+	windowWidth = 400, windowHeight = 300;
+	CHECK(EngineInput::GetMousePosition(mx, my) && mx == 700 && my == 500);
+
+	// Physical motion queued before the block is dropped; the wait hook then
+	// returns the next acceptable event.
+	drain();
+	SDLEvent motion{};
+	motion.motion.type = SDL_MOUSEMOTION;
+	motion.motion.x = 5;
+	motion.motion.y = 6;
+	CHECK(gPrivateFuncs.SDL_PushEvent(&motion) == 1);
+	EngineInput::SetBlockInput(true);
+	CHECK(gPrivateFuncs.SDL_PushEvent(&motion) == 0); // filtered while blocked
+	CHECK(EngineInput::MoveMouse(20, 40, false));
+	CHECK(Hooked_SDLWaitEventTimeout(&event, 0) == 1 && IsInjectedMouseMotion(event));
+	CHECK(event.motion.x == 10 && event.motion.y == 20);
+	CHECK(Hooked_SDLPollEvent(&event) == 0);
+	// An injected motion we no longer track (window recreated) is dropped.
+	CHECK(EngineInput::MoveMouse(30, 30, false));
+	g_pendingMotions.clear();
+	CHECK(Hooked_SDLPollEvent(&event) == 0);
+	// A rejected push does not move the cursor.
+	auto savedMotionPush = gPrivateFuncs.SDL_PushEvent;
+	gPrivateFuncs.SDL_PushEvent = [](SDLEvent*) -> int { return -1; };
+	CHECK(EngineInput::GetMousePosition(mx, my));
+	CHECK(!EngineInput::MoveMouse(500, 500, false));
+	int unchangedX = -1, unchangedY = -1;
+	CHECK(EngineInput::GetMousePosition(unchangedX, unchangedY) && unchangedX == mx && unchangedY == my);
+	CHECK(g_pendingMotions.empty());
+	gPrivateFuncs.SDL_PushEvent = savedMotionPush;
+	// Allowed physical motion takes the cursor over.
+	EngineInput::SetBlockInput(false);
+	motion.motion.x = 50;
+	motion.motion.y = 60;
+	CHECK(gPrivateFuncs.SDL_PushEvent(&motion) == 1);
+	CHECK(Hooked_SDLPollEvent(&event) == 1 && !IsInjectedMouseMotion(event) && !g_dispatchingInjectedMotion);
+	CHECK(!g_mouse.HasVirtualPosition());
+	int realX = -1, realY = -1;
+	gRealFuncs.SDL_GetMouseState(&realX, &realY);
+	CHECK(EngineInput::GetMousePosition(mx, my) && mx == realX * 2 && my == realY * 2); // follows SDL again
+	CHECK(!EngineInput::WarpVirtualMouse(0, 0)); // a physical cursor warps for real
+
 	EngineInput::OnExitGame();
 	CHECK(!EngineInput::EngineHooksInstalled());
+	CHECK(!EngineInput::MoveMouse(1, 1, false));
 	CHECK(!EngineInput::SendKey('w', true));
 	auto setFilter = (void(__cdecl*)(SDLFilter, void*))GetProcAddress(sdl, "SDL_SetEventFilter");
 	auto getFilter = (int(__cdecl*)(SDLFilter*, void**))GetProcAddress(sdl, "SDL_GetEventFilter");
@@ -162,6 +283,8 @@ int wmain(int argc, wchar_t** argv)
 	CHECK(messages.back().type == WM_XBUTTONUP && LOWORD(messages.back().wp) == 0);
 	CHECK(EngineInput::SendKey(K_MWHEELDOWN, true));
 	CHECK(messages.back().type == WM_MOUSEWHEEL && (short)HIWORD(messages.back().wp) == -WHEEL_DELTA);
+	CHECK(!EngineInput::MoveMouse(1, 1, false));
+	CHECK(!strcmp(EngineInput::EngineHooksError(), "mouse motion needs the SDL2 input backend"));
 	g_windowHook = nullptr;
 	std::printf("engine_input: %d failure(s)\n", failures);
 	return failures ? 1 : 0;

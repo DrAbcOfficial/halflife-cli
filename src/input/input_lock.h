@@ -16,7 +16,8 @@
 // engine). vgui2/vgui/tier0 are not: they legitimately use the cursor for UI
 // and debug overlays. Paths covered: non-raw user32 (GetCursorPos /
 // SetCursorPos on the client), raw SDL relative (client or engine), and the
-// engine's SDL_WarpMouseInWindow recentring warp.
+// engine's SDL_WarpMouseInWindow recentring warp. The same freeze applies
+// while the focus lock alone keeps the engine active (see input/focus_lock.h).
 namespace InputLock
 {
 	// Installs the IAT hooks on the client module. Idempotent: LoadClient
@@ -24,7 +25,7 @@ namespace InputLock
 	void InstallHooks();
 
 	void SetActive(bool active);      // lock on/off at runtime
-	bool GetActive();
+	bool GetActive();                 // the explicit lock; the focus guard is reported by FocusLock
 
 	// Lock ready: the non-raw user32 pair is hooked, or the raw SDL path is.
 	bool HooksInstalled();

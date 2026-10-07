@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -30,7 +31,8 @@ import game_process
 import rcon_client
 import halflife_mcp
 from game_process import BANNER_RE, GameProcess
-from halflifecli.manager import Manager
+from halflifecli import manager as manager_module
+from halflifecli.manager import DEFAULT_COMMAND_MAX_LINES, Manager, truncate_output
 from halflifecli.plugin_config import read_plugin_config
 from halflifecli.screenshot import find_new_screenshot, shot_to_png
 from halflifecli.usermsg import (
@@ -39,6 +41,7 @@ from halflifecli.usermsg import (
     parse_usermsg_status,
     sync_usermsg_schemas,
 )
+from mcp.server.mcpserver.exceptions import ToolError
 
 os.environ["HALFLIFE_DISABLE_ATTACH"] = "1"
 
@@ -123,19 +126,22 @@ class TestShotToPng(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             src = os.path.join(d, "shot.bmp")
             PILImage.new("RGB", (2560, 1440), (255, 0, 0)).save(src, format="BMP")
-            png, w, h = shot_to_png(src, 1280)
+            png, w, h, original_w, original_h = shot_to_png(src, 1280)
             self.assertTrue(png[:8] == b"\x89PNG\r\n\x1a\n")
             self.assertEqual((w, h), (1280, 720))
-            png2, w2, h2 = shot_to_png(src, 0)
+            self.assertEqual((2560, 1440), (original_w, original_h))
+            png2, w2, h2, original_w2, original_h2 = shot_to_png(src, 0)
             self.assertEqual((w2, h2), (2560, 1440))
+            self.assertEqual((w2, h2), (original_w2, original_h2))
 
     def test_tga_input(self):
         from PIL import Image as PILImage
         with tempfile.TemporaryDirectory() as d:
             src = os.path.join(d, "osprey.tga")
             PILImage.new("RGB", (64, 32), (0, 255, 0)).save(src, format="TGA")
-            png, w, h = shot_to_png(src, 1280)
+            png, w, h, original_w, original_h = shot_to_png(src, 1280)
             self.assertEqual((w, h), (64, 32))
+            self.assertEqual((64, 32), (original_w, original_h))
             self.assertTrue(png[:8] == b"\x89PNG\r\n\x1a\n")
 
 
@@ -152,6 +158,26 @@ class TestFindNewScreenshot(unittest.TestCase):
             path = find_new_screenshot(set(), d, timeout=5, poll=0.2)
             t.join()
             self.assertTrue(path.endswith("s.bmp"))
+
+    def test_appears_in_a_later_directory(self):
+        # The GoldSrc engine writes into the mod root while Sven writes into a
+        # screenshots subdirectory; a file in the second path must be found too.
+        with tempfile.TemporaryDirectory() as d:
+            mod_root = os.path.join(d, "czero")
+            shots = os.path.join(mod_root, "screenshots")
+            os.makedirs(shots)
+            created = os.path.join(mod_root, "HalfLife00.tga")
+
+            def write():
+                import time
+                time.sleep(0.6)
+                with open(created, "wb") as f:
+                    f.write(b"\0" * 64)
+            t = threading.Thread(target=write)
+            t.start()
+            path = find_new_screenshot(set(), (mod_root, shots), timeout=5, poll=0.2)
+            t.join()
+            self.assertEqual(os.path.abspath(created), path)
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +271,98 @@ class TestUserMsgParsers(unittest.TestCase):
             self.assertEqual(n, 1)
             self.assertTrue(os.path.exists(
                 os.path.join(game, "svencoop", "metahook", "configs", "halflifecli", "usermsgs", "a.toml")))
+
+
+# ---------------------------------------------------------------------------
+# Command output limits
+# ---------------------------------------------------------------------------
+
+class TestTruncateOutput(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self._log_dir = patch.object(manager_module, "COMMAND_LOG_DIR", self._tmp.name)
+        self._log_dir.start()
+        self.addCleanup(self._log_dir.stop)
+
+    def test_negative_keeps_every_line(self):
+        text = "\n".join(f"line{i}" for i in range(50))
+        self.assertEqual(text, truncate_output(text, -1, "head", "cmd"))
+        self.assertEqual([], os.listdir(self._tmp.name))
+
+    def test_under_or_at_cap_is_unchanged(self):
+        text = "a\nb\nc"
+        for max_lines in (3, 5):
+            with self.subTest(max_lines=max_lines):
+                self.assertEqual(text, truncate_output(text, max_lines, "head", "cmd"))
+        self.assertEqual([], os.listdir(self._tmp.name))
+
+    def test_bad_keep_raises(self):
+        for max_lines in (-1, 1):
+            with self.subTest(max_lines=max_lines), self.assertRaises(ToolError):
+                truncate_output("a\nb", max_lines, "middle", "cmd")
+        self.assertEqual([], os.listdir(self._tmp.name))
+
+    def test_head_keeps_start_and_writes_full_log(self):
+        text = "\n".join(f"line{i}" for i in range(100))
+        lines = truncate_output(text, 10, "head", "cvarlist").split("\n")
+        self.assertEqual([f"line{i}" for i in range(10)], lines[:10])
+        self.assertIn("90 of 100 lines omitted", lines[10])
+        path = lines[10].split("full output: ", 1)[1].removesuffix("]")
+        self.assertTrue(os.path.exists(path))
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(text, f.read())
+
+    def test_tail_keeps_end(self):
+        text = "\n".join(f"line{i}" for i in range(100))
+        lines = truncate_output(text, 10, "tail", "cmd").split("\n")
+        self.assertEqual(11, len(lines))  # marker + 10 tail lines
+        self.assertIn("90 of 100 lines omitted", lines[0])
+        self.assertEqual([f"line{i}" for i in range(90, 100)], lines[1:])
+
+    def test_both_keeps_start_and_end(self):
+        text = "\n".join(f"line{i}" for i in range(100))
+        for max_lines, head_count in ((10, 5), (9, 5), (1, 1)):
+            with self.subTest(max_lines=max_lines):
+                lines = truncate_output(text, max_lines, "both", "cmd").split("\n")
+                self.assertEqual(max_lines + 1, len(lines))
+                self.assertEqual([f"line{i}" for i in range(head_count)], lines[:head_count])
+                self.assertIn(f"{100 - max_lines} of 100 lines omitted", lines[head_count])
+                tail_start = 100 - (max_lines - head_count)
+                self.assertEqual([f"line{i}" for i in range(tail_start, 100)], lines[head_count + 1:])
+
+    def test_zero_returns_only_marker(self):
+        text = "\n".join(f"line{i}" for i in range(7))
+        for keep in ("head", "tail", "both"):
+            with self.subTest(keep=keep):
+                out = truncate_output(text, 0, keep, "cmd")
+                self.assertNotIn("\n", out)
+                self.assertIn("7 of 7 lines omitted; full output: ", out)
+
+    def test_same_command_gets_distinct_logs(self):
+        text = "a\nb\nc"
+        first = truncate_output(text, 1, "head", "cvarlist").split("full output: ", 1)[1]
+        second = truncate_output(text, 1, "head", "cvarlist").split("full output: ", 1)[1]
+        self.assertNotEqual(first, second)
+        self.assertEqual(2, len(os.listdir(self._tmp.name)))
+
+    def test_unicode_output_and_command_filename(self):
+        text = "状态正常\n地图已加载\n玩家就绪"
+        out = truncate_output(text, 1, "head", 'echo ../状态; "ok"')
+        path = out.split("full output: ", 1)[1].removesuffix("]")
+        self.assertEqual(self._tmp.name, os.path.dirname(path))
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(text, f.read())
+
+    def test_unwritable_log_dir_still_returns_capped_output(self):
+        blocker = os.path.join(self._tmp.name, "not-a-dir")
+        with open(blocker, "w"):
+            pass
+        with patch.object(manager_module, "COMMAND_LOG_DIR", blocker):
+            with self.assertLogs(manager_module.log, "WARNING"):
+                lines = truncate_output("a\nb\nc", 1, "head", "cmd").split("\n")
+        self.assertEqual("a", lines[0])
+        self.assertIn("2 of 3 lines omitted; full output not saved: ", lines[1])
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +461,7 @@ class FakeGame:
 def _attach_fake(manager, fake):
     """Point a Manager at a fake game without triggering resolve/port files."""
     manager._proc = fake
-    manager._game_dir = tempfile.gettempdir()
+    manager._target = game_process.GameTarget(tempfile.gettempdir())
     manager._host = fake.host
     manager._port = fake.port
     manager._password = ""
@@ -364,8 +482,8 @@ class TestToolsOverMemory(unittest.TestCase):
             return manager.launch_game(extra_args, game_dir, timeout_s)
         def status():
             return manager.game_status()
-        def run(command):
-            return manager.run_command(command)
+        def run(command, max_lines=DEFAULT_COMMAND_MAX_LINES, keep="head"):
+            return manager.run_command(command, max_lines, keep)
         def find(name):
             return manager.find_cvar(name)
         def read_console(max_lines, cursor):
@@ -396,6 +514,95 @@ class TestToolsOverMemory(unittest.TestCase):
             anyio.run(main)
         finally:
             fake_srv.close()
+
+    def test_run_command_truncates_and_saves_full_output(self):
+        fake_srv = FakeRconServer(password="pw", canned={"status": "a\nb\nc\nd\ne\n"})
+        self.addCleanup(fake_srv.close)
+        mgr = Manager()
+        _attach_fake(mgr, FakeGame("127.0.0.1", fake_srv.port))
+        mgr._password = "pw"
+        self.addCleanup(lambda: mgr._rcon.close() if mgr._rcon else None)
+        server = self._client(mgr)
+        with tempfile.TemporaryDirectory() as log_dir:
+            with patch.object(manager_module, "COMMAND_LOG_DIR", log_dir):
+                async def main():
+                    from mcp import Client
+                    async with Client(server) as client:
+                        full = await client.call_tool("run_command", {"command": "status"})
+                        self.assertFalse(full.is_error)
+                        self.assertEqual("a\nb\nc\nd\ne", full.content[0].text)
+                        capped = await client.call_tool(
+                            "run_command", {"command": "status", "max_lines": 2})
+                        self.assertFalse(capped.is_error)
+                        lines = capped.content[0].text.split("\n")
+                        self.assertEqual(["a", "b"], lines[:2])
+                        self.assertIn("3 of 5 lines omitted", lines[2])
+                        path = lines[2].split("full output: ", 1)[1].removesuffix("]")
+                        with open(path, encoding="utf-8") as f:
+                            self.assertEqual("a\nb\nc\nd\ne", f.read())
+                anyio.run(main)
+
+    def test_bad_keep_is_rejected_before_sending(self):
+        mgr = Manager()
+        with patch.object(mgr, "_connection_locked") as connection:
+            for max_lines in (-1, 1):
+                with self.subTest(max_lines=max_lines), self.assertRaises(ToolError):
+                    mgr.run_command("map crossfire", max_lines, "middle")
+            connection.assert_not_called()
+
+    def test_real_run_command_schema_caps_by_default(self):
+        async def main():
+            from mcp import Client
+            async with Client(halflife_mcp.mcp) as client:
+                tools = {t.name: t for t in (await client.list_tools()).tools}
+                props = tools["run_command"].input_schema["properties"]
+                self.assertEqual(200, props["max_lines"]["default"])
+                self.assertEqual(-1, props["max_lines"]["minimum"])
+                self.assertEqual("head", props["keep"]["default"])
+                self.assertEqual(["head", "tail", "both"], props["keep"]["enum"])
+                self.assertNotIn("truncate", props)
+        anyio.run(main)
+
+    def test_real_run_command_default_cap_and_internal_full_output(self):
+        text = "\n".join(f"line{i}" for i in range(201))
+        mgr = Manager()
+        with tempfile.TemporaryDirectory() as log_dir:
+            with patch.object(manager_module, "COMMAND_LOG_DIR", log_dir), \
+                    patch.object(mgr, "_connection_locked") as connection, \
+                    patch.object(halflife_mcp, "manager", mgr):
+                connection.return_value.command.return_value = text
+                async def main():
+                    from mcp import Client
+                    async with Client(halflife_mcp.mcp) as client:
+                        capped = await client.call_tool("run_command", {"command": "cvarlist"})
+                        self.assertFalse(capped.is_error)
+                        lines = capped.content[0].text.split("\n")
+                        self.assertEqual([f"line{i}" for i in range(200)], lines[:200])
+                        self.assertIn("1 of 201 lines omitted", lines[200])
+                        full = await client.call_tool(
+                            "run_command", {"command": "cvarlist", "max_lines": -1})
+                        self.assertEqual(text, full.content[0].text)
+                anyio.run(main)
+                self.assertEqual(text, mgr.run_command("cvarlist"))
+                own = 'cli.find: "sv_cheats" exists (cvar, value "0")'
+                connection.return_value.command.return_value = text + "\n" + own
+                self.assertEqual(own, mgr.find_cvar("sv_cheats"))
+                self.assertEqual(1, len(os.listdir(log_dir)))
+
+    def test_real_run_command_rejects_invalid_options_before_sending(self):
+        mgr = Manager()
+        with patch.object(mgr, "_connection_locked") as connection, \
+                patch.object(halflife_mcp, "manager", mgr):
+            async def main():
+                from mcp import Client
+                async with Client(halflife_mcp.mcp) as client:
+                    for options in ({"max_lines": -2}, {"keep": "middle"}):
+                        with self.subTest(options=options):
+                            result = await client.call_tool(
+                                "run_command", {"command": "map crossfire", **options})
+                            self.assertTrue(result.is_error)
+            anyio.run(main)
+            connection.assert_not_called()
 
     def test_wrong_password_is_tool_error(self):
         fake_srv = FakeRconServer(password="right", echo=True)
@@ -547,6 +754,139 @@ class TestToolsOverMemory(unittest.TestCase):
         with self.assertRaises(ToolError):
             mgr.send_key("w", "hold", 0)
 
+    def test_move_mouse_returns_plugin_coordinates(self):
+        fake_srv, mgr = self._input_manager({
+            "cli.mousemove absolute 640 360": "cli.mousemove: x=640 y=360",
+            "cli.mousemove relative -20 10": "cli.mousemove: x=620 y=370",
+            "cli.mousemove absolute 9999 -3": "cli.mousemove: x=1279 y=0",
+        })
+        try:
+            self.assertEqual("cli.mousemove: x=640 y=360", mgr.move_mouse(640, 360))
+            self.assertEqual("cli.mousemove: x=620 y=370", mgr.move_mouse(-20, 10, "relative"))
+            self.assertEqual("cli.mousemove: x=1279 y=0", mgr.move_mouse(9999, -3))
+        finally:
+            fake_srv.close()
+
+    def test_send_mouse_moves_before_click(self):
+        fake_srv, mgr = self._input_manager({
+            "cli.mousemove absolute 640 360": "cli.mousemove: x=640 y=360",
+        })
+        try:
+            reply = mgr.send_mouse(1, "tap", 0, x=640, y=360)
+            self.assertIn("x=640 y=360", reply)
+            self.assertEqual(["cli.mousemove absolute 640 360", "cli.trapmouse 1 1",
+                              "cli.trapmouse 0 0"], fake_srv.commands)
+        finally:
+            fake_srv.close()
+
+    def test_failed_move_does_not_click(self):
+        for reply in ("cli.mousemove: error: input injection failed (SDL event filtered)",
+                      "Unknown command: cli.mousemove",
+                      "cli.mousemove: x=invalid y=12", "cli.mousemove: x=-1 y=12"):
+            fake_srv, mgr = self._input_manager({"cli.mousemove absolute 10 12": reply})
+            try:
+                with self.subTest(reply=reply), self.assertRaises(ToolError):
+                    mgr.send_mouse(1, "tap", 0, x=10, y=12)
+                self.assertEqual(["cli.mousemove absolute 10 12"], fake_srv.commands)
+            finally:
+                fake_srv.close()
+
+    def test_mouse_validation_precedes_motion(self):
+        mgr = Manager()
+        with patch.object(mgr, "_trap_command") as command:
+            for kwargs in ({"x": 1}, {"y": 2}, {"x": 1, "y": 2, "mode": "bad"},
+                           {"x": 1.5, "y": 2}, {"x": True, "y": 2}, {"mode": "bad"}):
+                with self.subTest(kwargs=kwargs), self.assertRaises(ToolError):
+                    mgr.send_mouse(1, "tap", 0, **kwargs)
+            with self.assertRaises(ToolError):
+                mgr.send_mouse(1, "bad", 0, x=1, y=2)
+            for x in (2**31, -(2**31) - 1):
+                with self.subTest(x=x), self.assertRaises(ToolError):
+                    mgr.move_mouse(x, 0)
+            command.assert_not_called()
+
+    def test_move_mouse_mcp_validates_and_returns_coordinates(self):
+        from mcp import Client
+        fake_srv, mgr = self._input_manager({
+            "cli.mousemove relative -10 20": "cli.mousemove: x=30 y=50",
+            "cli.mousemove relative 640 360": "cli.mousemove: x=670 y=410",
+        })
+        try:
+            async def main():
+                async with Client(halflife_mcp.mcp) as client:
+                    good = await client.call_tool("move_mouse", {"x": -10, "y": 20, "mode": "relative"})
+                    self.assertFalse(good.is_error)
+                    self.assertIn("x=30 y=50", good.content[0].text)
+                    click = await client.call_tool("send_mouse", {"buttons": 1, "x": 640, "y": 360,
+                                                                  "mode": "relative", "hold_ms": 0})
+                    self.assertFalse(click.is_error)
+                    self.assertIn("x=670 y=410", click.content[0].text)
+                    missing_y = await client.call_tool("send_mouse", {"buttons": 1, "x": 10})
+                    self.assertTrue(missing_y.is_error)
+                    for arguments in ({"x": True, "y": 1}, {"x": 1.5, "y": 1},
+                                      {"x": 2**31, "y": 1}, {"x": 1, "y": 1, "mode": "bad"}):
+                        bad = await client.call_tool("move_mouse", arguments)
+                        self.assertTrue(bad.is_error, arguments)
+            with patch.object(halflife_mcp, "manager", mgr), patch.object(mgr, "shutdown"):
+                anyio.run(main)
+            self.assertEqual(["cli.mousemove relative -10 20", "cli.mousemove relative 640 360",
+                              "cli.trapmouse 1 1", "cli.trapmouse 0 0"], fake_srv.commands)
+        finally:
+            fake_srv.close()
+
+    def test_snapshot_reports_original_and_returned_dimensions(self):
+        import io
+        from unittest.mock import Mock
+        from PIL import Image as PILImage
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "source.bmp")
+            PILImage.new("RGB", (800, 600)).save(source)
+            mgr = Manager()
+            with patch.object(mgr, "_connection_locked", return_value=Mock()), \
+                    patch.object(mgr, "_target_locked", return_value=game_process.GameTarget(directory)), \
+                    patch.object(manager_module, "find_new_screenshot", return_value=source):
+                result = mgr.snapshot(400)
+            self.assertIn("original_size=(800,600)", result[1])
+            self.assertIn("returned_size=(400,300)", result[1])
+            with PILImage.open(io.BytesIO(result[0].data)) as image:
+                self.assertEqual((400, 300), image.size)
+
+    def test_input_sequences_do_not_interleave(self):
+        mgr = Manager()
+        commands = []
+        holding = threading.Event()
+        started = threading.Event()
+        finish_hold = threading.Event()
+        motion_done = threading.Event()
+
+        def command(cmd):
+            commands.append(cmd)
+            return "cli.mousemove: x=10 y=20" if cmd.startswith("cli.mousemove") else cmd
+
+        def hold(seconds):
+            holding.set()
+            self.assertTrue(finish_hold.wait(5))
+
+        def move():
+            started.set()
+            mgr.move_mouse(10, 20)
+            motion_done.set()
+
+        with patch.object(mgr, "_trap_command", side_effect=command), \
+                patch.object(manager_module.time, "sleep", hold):
+            tap = threading.Thread(target=lambda: mgr.send_key("w", "tap", 100))
+            tap.start()
+            self.assertTrue(holding.wait(5))
+            motion = threading.Thread(target=move)
+            motion.start()
+            self.assertTrue(started.wait(5))
+            self.assertFalse(motion_done.wait(0.1), "motion interleaved with a held tap")
+            finish_hold.set()
+            tap.join(5)
+            motion.join(5)
+            self.assertFalse(tap.is_alive() or motion.is_alive())
+        self.assertEqual(["cli.trapkey w 1", "cli.trapkey w 0", "cli.mousemove absolute 10 20"], commands)
+
     def test_usermsg_status_rejects_garbage(self):
         fake_srv = FakeRconServer(password="pw", echo=True)  # echoes, no report line
         try:
@@ -579,7 +919,7 @@ class TestStdioSmoke(unittest.TestCase):
                 tools = await client.list_tools()
                 names = {t.name for t in tools.tools}
                 expected = {"launch_game", "game_status", "run_command",
-                            "find_cvar", "send_key", "send_mouse",
+                            "find_cvar", "send_key", "send_mouse", "move_mouse",
                             "read_console", "snapshot", "quit_game",
                             "usermsg_status", "usermsg_messages", "usermsg_events",
                             "usermsg_set_display", "usermsg_reload_schema"}
@@ -610,12 +950,22 @@ class TestEndToEnd(unittest.TestCase):
                 launched = await call("launch_game", {"timeout_s": 120})
                 self.assertTrue(launched.structured_content.get("running"))
                 self.assertEqual(launched.structured_content.get("mode"), "managed")
+                self.assertEqual("goldsrc-udp", launched.structured_content.get("protocol"))
+                status = await call("game_status")
+                self.assertTrue(status.structured_content.get("running"))
 
                 echo = await call("run_command", {"command": "echo hello_from_e2e"})
                 self.assertIn("hello_from_e2e", echo.content[0].text)
 
                 found = await call("find_cvar", {"name": "sv_cheats"})
                 self.assertIn("exists", found.content[0].text)
+                await call("send_key", {"key": "k", "action": "release"})
+                await call("send_mouse", {"buttons": 1, "action": "release"})
+                await call("usermsg_status")
+                await call("usermsg_messages")
+                await call("usermsg_set_display", {"enabled": False})
+                await call("usermsg_reload_schema", {"sync_from_repo": False})
+                await call("usermsg_set_display", {"enabled": True})
 
                 await call("run_command", {"command": "map osprey"})
                 import time
@@ -638,8 +988,12 @@ class TestEndToEnd(unittest.TestCase):
                 types = {b.type for b in shot.content}
                 self.assertIn("image", types)
                 self.assertTrue(any(getattr(b, "mime_type", "") == "image/png" for b in shot.content))
+                events = await call("usermsg_events")
+                self.assertTrue(events.structured_content.get("events"))
 
-                await call("quit_game", {"timeout_s": 30})
+                stopped = await call("quit_game", {"timeout_s": 30})
+                self.assertNotIn("killed", stopped.content[0].text)
+                self.assertIn("exit code 0", stopped.content[0].text)
 
         anyio.run(main)
 

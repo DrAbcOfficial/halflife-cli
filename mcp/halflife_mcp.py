@@ -33,7 +33,10 @@ from pydantic import Field
 
 from game_process import BANNER_TIMEOUT_S, QUIT_TIMEOUT_S
 from halflifecli.manager import (
+    DEFAULT_COMMAND_MAX_LINES,
     DEFAULT_HOLD_MS,
+    INT32_MAX,
+    INT32_MIN,
     LAUNCH_TIMEOUT_CAP_S,
     MAX_HOLD_MS,
     MOUSE_BUTTONS_MASK,
@@ -58,12 +61,20 @@ DEFAULT_IMAGE_MAX_EDGE = 1280
 
 INSTRUCTIONS = (
     "Drive Sven Co-op / Half-Life through halflife-cli. "
-    "Call launch_game first. After `map <name>`, use read_console to wait for "
+    "Call launch_game first: Sven Co-op (225840) is found without help, any "
+    "other app needs its appid (10 Counter-Strike, 70 Half-Life) so "
+    "MetahookInstallerCLI can report its mod and launcher. After `map <name>`, "
+    "use read_console to wait for "
     "the load to finish before snapshot. Before snapshot, make sure a map is "
     "loaded and rendering (the main menu does not render the world). Verify "
     "cvar/command names with find_cvar before running them. Call quit_game when "
-    "done. Use run_command for everything else. "
-    "To press keys or mouse buttons in the game use send_key / send_mouse: they "
+    "done. Use run_command for everything else; its output is capped at "
+    "max_lines (default 200) and the full text of a capped command is saved to "
+    "the file path it returns, so grep that file instead of raising the cap. "
+    "To press keys or mouse buttons in the game use send_key / send_mouse. "
+    "For UI pointing use move_mouse, or send_mouse with x/y, measured in "
+    "snapshot's original_size pixels (returned_size describes the scaled image); "
+    "relative motion moves the UI cursor, not the view. Inputs "
     "enter through the engine's own input path, work with the window hidden or "
     "block_input on, and never touch other windows. Do not simulate input with "
     "Win32 SendInput / keybd_event / mouse_event or posted window messages. "
@@ -95,10 +106,16 @@ mcp = MCPServer("halflife", instructions=INSTRUCTIONS, lifespan=lifespan)
 def launch_game(
     extra_args: Annotated[list[str], Field(description="Extra game launch arguments (windowed and -novid are always added)", default_factory=list)],
     game_dir: Annotated[str | None, Field(description="Game install directory; resolved automatically when omitted")] = None,
+    appid: Annotated[int | None, Field(description="Steam app ID (225840 Sven Co-op, 10 Counter-Strike, 70 Half-Life). Any other app is described by MetahookInstallerCLI", ge=1)] = None,
+    mod: Annotated[str | None, Field(description="Mod directory under the game root, e.g. cstrike; empty uses the app's default mod")] = None,
     timeout_s: Annotated[int, Field(description="Seconds to wait for the RCON banner", ge=1, le=LAUNCH_TIMEOUT_CAP_S)] = BANNER_TIMEOUT_S,
 ) -> GameStatus:
-    """Launch the game (if not already running) and wait for it to be drivable."""
-    return manager.launch_game(extra_args, game_dir, timeout_s)
+    """Launch the game (if not already running) and wait for it to be drivable.
+
+    Sven Co-op is the default target. Pass the appid of another GoldSrc app
+    (and optionally its mod directory) to launch that one instead.
+    """
+    return manager.launch_game(extra_args, game_dir, timeout_s, appid, mod)
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
@@ -110,9 +127,11 @@ def game_status() -> GameStatus:
 @mcp.tool()
 def run_command(
     command: Annotated[str, Field(description="Console command or cvar assignment, e.g. 'status', 'sv_cheats 1'")],
+    max_lines: Annotated[int, Field(description="Cap on returned lines so a chatty command cannot flood context; -1 keeps every line, 0 returns only the saved-file marker. When lines are dropped, the full output is saved to a file whose path is returned.", ge=-1)] = DEFAULT_COMMAND_MAX_LINES,
+    keep: Annotated[Literal["head", "tail", "both"], Field(description="Which lines to keep when max_lines is hit: head = first lines, tail = last lines, both = first and last halves")] = "head",
 ) -> str:
     """Run one console command over RCON and return the captured output."""
-    return manager.run_command(command)
+    return manager.run_command(command, max_lines, keep)
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
@@ -129,8 +148,18 @@ def send_key(
     action: Annotated[Literal["tap", "press", "release"], Field(description="tap = press, hold for hold_ms, release; press/release send one edge (e.g. hold +forward across other calls)")] = "tap",
     hold_ms: Annotated[int, Field(description="How long a tap keeps the key down", ge=0, le=MAX_HOLD_MS)] = DEFAULT_HOLD_MS,
 ) -> str:
-    """Inject through SDL_PushEvent or the original CGame::WindowProc, bypassing block_input. Keys need a native mapping; mouse keys share send_mouse's focus restrictions. Wheel press is a pulse; release is a no-op."""
+    """Inject through SDL_PushEvent or the original CGame::WindowProc, bypassing block_input. Keys need a native mapping; mouse keys share send_mouse's cursor/button state. Wheel press is a pulse; release is a no-op."""
     return manager.send_key(key, action, hold_ms)
+
+
+@mcp.tool()
+def move_mouse(
+    x: Annotated[int, Field(description="X position or delta in original screenshot pixels", strict=True, ge=INT32_MIN, le=INT32_MAX)],
+    y: Annotated[int, Field(description="Y position or delta in original screenshot pixels", strict=True, ge=INT32_MIN, le=INT32_MAX)],
+    mode: Annotated[Literal["absolute", "relative"], Field(description="absolute: from the game image's top left; relative: add x/y to the current cursor position")] = "absolute",
+) -> str:
+    """Move the UI cursor through SDL events (SDL2 engines), clamp to the image and return its absolute x/y. Use snapshot's original_size for coordinates; relative motion moves the UI cursor."""
+    return manager.move_mouse(x, y, mode)
 
 
 @mcp.tool()
@@ -138,9 +167,12 @@ def send_mouse(
     buttons: Annotated[int, Field(description="Mouse buttons to press: bitmask 1=left 2=right 4=middle 8=mouse4 16=mouse5", ge=1, le=MOUSE_BUTTONS_MASK)],
     action: Annotated[Literal["tap", "press", "release"], Field(description="tap = press, hold for hold_ms, release; release lifts every button")] = "tap",
     hold_ms: Annotated[int, Field(description="How long a tap keeps the buttons down", ge=0, le=MAX_HOLD_MS)] = DEFAULT_HOLD_MS,
+    x: Annotated[int | None, Field(description="Optional X position/delta in original screenshot pixels; provide both x and y", strict=True, ge=INT32_MIN, le=INT32_MAX)] = None,
+    y: Annotated[int | None, Field(description="Optional Y position/delta in original screenshot pixels; provide both x and y", strict=True, ge=INT32_MIN, le=INT32_MAX)] = None,
+    mode: Annotated[Literal["absolute", "relative"], Field(description="Coordinate mode when x/y are provided")] = "absolute",
 ) -> str:
-    """Inject native mouse-button transitions (no cursor motion), bypassing block_input. The held mask is authoritative. Client focus restrictions apply, including when using send_key("MOUSE1")."""
-    return manager.send_mouse(buttons, action, hold_ms)
+    """Optionally move the UI cursor, then inject native mouse-button transitions in one serialized call, bypassing block_input. The held mask is authoritative; release lifts every button. Coordinates use snapshot's original_size and are echoed after moving."""
+    return manager.send_mouse(buttons, action, hold_ms, x, y, mode)
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
@@ -156,7 +188,7 @@ def read_console(
 def snapshot(
     max_edge: Annotated[int, Field(description="Downscale so the longest side is this many px; 0 keeps the original size", ge=0, le=4096)] = DEFAULT_IMAGE_MAX_EDGE,
 ) -> list:
-    """Capture an in-game screenshot (engine `screenshot` command) and return it as a PNG image."""
+    """Capture an in-game screenshot (engine `screenshot` command) as a PNG plus original_size=(w,h) and returned_size=(w,h). Mouse coordinates use original pixels; scale displayed coordinates by original_size / returned_size."""
     return manager.snapshot(max_edge)
 
 

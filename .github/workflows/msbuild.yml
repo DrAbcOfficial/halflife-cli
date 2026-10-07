@@ -1,0 +1,79 @@
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # needed by softprops/action-gh-release
+
+jobs:
+  build-win32:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      # Only tomlplusplus remains a submodule. CMake fetches pinned MetaHook and
+      # VGUI2Extension sources without their recursive submodules.
+      - name: Init submodules (shallow, top-level only)
+        run: git submodule update --init --depth 1
+
+      # No explicit generator: cmake picks the newest Visual Studio installed
+      # on the runner, keeping this working across runner image updates.
+      - name: Configure (Win32 — the game process is 32-bit)
+        run: cmake -S . -B build -A Win32
+
+      - name: Build and install
+        run: |
+          cmake --build build --config Release
+          cmake --install build --config Release --prefix install/x86/Release
+
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      # The install rule's typed TOML booleans must survive the file being read
+      # back through the plugin's parser; a type error would silently fall back
+      # to the compiled-in default. Assert the shapes we rely on.
+      - name: Validate shipped config
+        shell: python
+        run: |
+          import tomllib
+          with open("install/x86/Release/svencoop/metahook/configs/halflifecli/halflifecli.toml", "rb") as f:
+              cfg = tomllib.load(f)
+          assert isinstance(cfg["cli"]["developer"], int), "developer must be an integer"
+          assert isinstance(cfg["cli"]["hide_window"], int), "hide_window must be an integer"
+          for key in ("capture", "console", "block_input", "input_lock", "console_topmost", "rcon"):
+              assert isinstance(cfg["cli"][key], bool), "cli.%s must be a boolean" % key
+          assert isinstance(cfg["usermsg"]["enabled"], bool)
+          assert isinstance(cfg["usermsg"]["max_string"], int)
+          assert isinstance(cfg["rcon"]["password"], str)
+          print("halflifecli.toml parsed with the expected key types")
+
+      # Package the whole game-dir layout the install rules produced. Extract
+      # into a Sven Co-op root to install the plugin, config and gamedata.
+      - name: Package release 7z
+        id: package
+        shell: pwsh
+        working-directory: install/x86/Release
+        run: |
+          $archiveDirectory = Join-Path $env:GITHUB_WORKSPACE 'build/artifacts'
+          New-Item -ItemType Directory -Path $archiveDirectory -Force | Out-Null
+          $archivePath = Join-Path $archiveDirectory 'HalflifeCLI-windows-x86.7z'
+          if (Test-Path -LiteralPath $archivePath -PathType Leaf) {
+            Remove-Item -LiteralPath $archivePath
+          }
+          & 7z a -t7z $archivePath 'svencoop'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & 7z t $archivePath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "archive-path=$archivePath" >> $env:GITHUB_OUTPUT
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          name: HalflifeCLI-${{ github.ref_name }}
+          files: ${{ steps.package.outputs.archive-path }}
+          fail_on_unmatched_files: true

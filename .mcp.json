@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "halflife": {
-      "command": "uv",
-      "args": ["run", "--script", "${CLAUDE_PROJECT_DIR:-.}/mcp/halflife_mcp.py"]
-    }
-  }
-}

@@ -81,6 +81,17 @@ namespace WindowManager
 		return g_hwnd;
 	}
 
+	bool GetClientSize(int& width, int& height)
+	{
+		RECT rc;
+		HWND hwnd = (HWND)GetGameWindow();
+		if (!hwnd || !GetClientRect(hwnd, &rc))
+			return false;
+		width = rc.right - rc.left;
+		height = rc.bottom - rc.top;
+		return true;
+	}
+
 	// Runs every frame; cheap after the first pass. Re-asserts the hide mode
 	// and the input-block state because the engine can recreate the window
 	// on mode or video restarts.

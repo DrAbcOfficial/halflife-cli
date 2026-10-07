@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "name": "halflifecli",
+  "indexUrl": "https://hlnd2t.github.io/GoldSrc_VibeSignatures/gamesymbols/index.json",
+  "gameVersions": [
+    "cof-5936",
+    "hl-3248",
+    "hl-3266",
+    "hl-3329",
+    "hl-3647",
+    "hl-4554",
+    "hl-6153",
+    "hl-8684",
+    "hl-10210",
+    "svencoop-8948",
+    "svencoop-10257"
+  ],
+  "symbols": {
+    "engine": {
+      "Cbuf_Execute": "function",
+      "CGame_AppActivate": "function",
+      "CGame::SleepUntilInput": "virtualFunction",
+      "_Host_Frame_to_Cbuf_Execute_callsite_0": "patch",
+      "Host_Shutdown": "function",
+      "NET_Shutdown": "function",
+      "NET_Config": "function",
+      "NET_IsLocalAddress": "function",
+      "SVC_ServiceChallenge": "function",
+      "SV_Rcon": "function",
+      "SV_FlushRedirect": "function",
+      "NET_GetPacket": "function",
+      "NET_SendPacket": "function",
+      "SV_FilterPacket": "function",
+      "SV_SendBan": "function",
+      "SV_HandleRconPacket": "function",
+      "SV_CheckChallenge": "function",
+      "SV_CheckRconFailure": "function",
+      "SV_AddFailedRcon": "function",
+      "Cmd_ExecuteString": "function",
+      "SV_BeginRedirect": "function",
+      "SV_EndRedirect": "function",
+      "ip_sockets": "global",
+      "net_from": "global",
+      "net_message": "global",
+      "sv": "global",
+      "host_initialized": "global",
+      "giActive": "global",
+      "sv_redirected": "global",
+      "sv_redirectto": "global",
+      "outputbuf": "global",
+      "sv_active_offset": "scalar",
+      "sizebuf_t_data_offset": "scalar",
+      "sizebuf_t_cursize_offset": "scalar"
+    }
+  },
+  "symbolExemptions": {
+    "SV_HandleRconPacket": ["hl-10210"],
+    "SV_CheckRconFailure": ["hl-10210"],
+    "SV_BeginRedirect": ["hl-10210"],
+    "SV_EndRedirect": ["hl-10210"]
+  }
+}

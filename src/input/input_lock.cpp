@@ -1,5 +1,8 @@
 #include "input/input_lock.h"
 
+#include "input/engine_input.h"
+#include "input/focus_lock.h"
+#include "util/import_hook.h"
 #include "window/window_manager.h"
 
 #include <metahook.h>
@@ -27,7 +30,13 @@
 //     engine module is hooked too.
 //
 //   hw.dll warps: SDL_WarpMouseInWindow (the SDL engine's equivalent of
-//     SetCursorPos) is swallowed while locked.
+//     SetCursorPos) is swallowed while locked. While native input owns a
+//     virtual UI cursor, a warp moves that cursor instead (EngineInput).
+//
+// The focus lock keeps the engine active while its window is unfocused, so
+// the client would keep sampling and recentring the desktop cursor. While
+// the engine is active only because of that lock, these hooks behave as
+// locked too (the focus guard).
 //
 // vgui2/vgui/tier0 are NOT hooked — they legitimately use the cursor for UI
 // and debug overlays. SDL exports are cdecl; SDL_Uint32 is SDL's unsigned
@@ -72,6 +81,11 @@ namespace
 	SDL_GetRelativeMouseState_t g_realSDLGetRelativeMouseState = nullptr;
 	SDL_WarpMouseInWindow_t g_realSDLWarpMouseInWindow = nullptr;
 
+	bool Locked()
+	{
+		return g_active || FocusLock::ForcingActivation();
+	}
+
 	// Window centre through the cached HWND, for the frames before the game
 	// has handed us a warp target yet (e.g. lock enabled from the config at
 	// startup). The delta the client accumulates is our returned position
@@ -92,7 +106,7 @@ namespace
 	BOOL WINAPI Hooked_GetCursorPos(LPPOINT lpPoint)
 	{
 		++g_getCalls;
-		if (g_active && lpPoint)
+		if (Locked() && lpPoint)
 		{
 			if (g_haveLockedPos || WindowCentre(g_lockedPos))
 			{
@@ -107,7 +121,7 @@ namespace
 	BOOL WINAPI Hooked_SetCursorPos(int x, int y)
 	{
 		++g_setCalls;
-		if (g_active)
+		if (Locked())
 		{
 			g_lockedPos.x = x;
 			g_lockedPos.y = y;
@@ -132,7 +146,7 @@ namespace
 			g_lastDx = mx;
 			g_lastDy = my;
 		}
-		if (g_active)
+		if (Locked())
 		{
 			if (dx)
 				*dx = 0;
@@ -145,70 +159,16 @@ namespace
 	void __cdecl Hooked_SDLWarpMouseInWindow(void* window, int x, int y)
 	{
 		++g_warpCalls;
-		if (g_active)
+		if (EngineInput::WarpVirtualMouse(x, y) || Locked())
 			return;
 		g_realSDLWarpMouseInWindow(window, x, y);
-	}
-
-	// IAT slot of moduleName!funcName in the PE mapped at base, or null when
-	// not imported. Works for normally loaded modules (base = HMODULE) and
-	// memory-mapped blob modules alike.
-	void** FindImportSlot(void* base, const char* moduleName, const char* funcName)
-	{
-		auto dos = (IMAGE_DOS_HEADER*)base;
-		if (dos->e_magic != IMAGE_DOS_SIGNATURE)
-			return nullptr;
-		auto nt = (IMAGE_NT_HEADERS*)((BYTE*)base + dos->e_lfanew);
-		if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC)
-			return nullptr;
-		auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-		if (!dir.VirtualAddress)
-			return nullptr;
-		for (auto desc = (IMAGE_IMPORT_DESCRIPTOR*)((BYTE*)base + dir.VirtualAddress); desc->Name; ++desc)
-		{
-			const char* name = (const char*)((BYTE*)base + desc->Name);
-			if (_stricmp(name, moduleName))
-				continue;
-			// name thunks and IAT thunks run in parallel
-			ULONG_PTR namesRva = desc->OriginalFirstThunk ? desc->OriginalFirstThunk : desc->FirstThunk;
-			auto names = (IMAGE_THUNK_DATA*)((BYTE*)base + namesRva);
-			auto iat = (IMAGE_THUNK_DATA*)((BYTE*)base + desc->FirstThunk);
-			for (; names->u1.AddressOfData; ++names, ++iat)
-			{
-				if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal))
-					continue;
-				auto byName = (IMAGE_IMPORT_BY_NAME*)((BYTE*)base + names->u1.AddressOfData);
-				if (!_stricmp((const char*)byName->Name, funcName))
-					return (void**)&iat->u1.Function;
-			}
-		}
-		return nullptr;
-	}
-
-	// The client module is freed and reloaded on every map change, and
-	// MetaHook never drops IAT hooks for unloaded modules. Re-checking the
-	// slot makes repeated InstallHooks safe: a slot still pointing at our
-	// hook (same module) is skipped, a slot the loader rebuilt (fresh module,
-	// possibly at the same address) is hooked again. Hooking an
-	// already-hooked slot would chain the new hook's "original" to itself
-	// and recurse.
-	bool HookOne(HMODULE module, BlobHandle_t blob, const char* dllName, const char* funcName, void* hookFunc)
-	{
-		void* base = module ? (void*)module
-			: (blob ? g_pMetaHookAPI->GetBlobModuleImageBase(blob) : nullptr);
-		void** slot = base ? FindImportSlot(base, dllName, funcName) : nullptr;
-		if (!slot || *slot == hookFunc)
-			return false;
-		if (module)
-			return g_pMetaHookAPI->IATHook(module, dllName, funcName, hookFunc, nullptr) != nullptr;
-		return g_pMetaHookAPI->BlobIATHook(blob, dllName, funcName, hookFunc, nullptr) != nullptr;
 	}
 
 	// GoldSrc uses the SDL2 ABI, including when sdl2-compat forwards to SDL3.
 	// Native SDL3 mouse APIs use float coordinates and cannot use these hooks.
 	bool HookSDL(HMODULE module, BlobHandle_t blob, const char* funcName, void* hookFunc)
 	{
-		return HookOne(module, blob, "SDL2.dll", funcName, hookFunc);
+		return ImportHook::Hook(module, blob, "SDL2.dll", funcName, hookFunc);
 	}
 }
 
@@ -234,8 +194,8 @@ namespace InputLock
 
 		HMODULE client = g_pMetaHookAPI->GetClientModule();
 		BlobHandle_t clientBlob = client ? nullptr : g_pMetaHookAPI->GetBlobClientModule();
-		bool hookedGet = HookOne(client, clientBlob, "user32.dll", "GetCursorPos", Hooked_GetCursorPos);
-		bool hookedSet = HookOne(client, clientBlob, "user32.dll", "SetCursorPos", Hooked_SetCursorPos);
+		bool hookedGet = ImportHook::Hook(client, clientBlob, "user32.dll", "GetCursorPos", Hooked_GetCursorPos);
+		bool hookedSet = ImportHook::Hook(client, clientBlob, "user32.dll", "SetCursorPos", Hooked_SetCursorPos);
 		bool hookedRelClient = HookSDL(client, clientBlob, "SDL_GetRelativeMouseState", Hooked_SDLGetRelativeMouseState);
 		g_hookedGet |= hookedGet;
 		g_hookedSet |= hookedSet;

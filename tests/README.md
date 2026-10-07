@@ -1,17 +1,19 @@
 # Native input regression test
 
 From an **x86 Native Tools Command Prompt for Visual Studio**, at the repo
-root (with `build/` already present):
+root (with `build/` already configured). Set `METAHOOK_SOURCE_PATH` to the
+resolved path printed by CMake; for the default FetchContent build:
 
 ```bat
+set "METAHOOK_SOURCE_PATH=%CD%\build\_deps\halflife_cli_metahook-src"
 cl /nologo /std:c++20 /EHsc /MT /DNOMINMAX /wd4819 /Isrc ^
-  /Ithirdparty/MetaHookSv/include /Ithirdparty/MetaHookSv/include/Interface ^
-  /Ithirdparty/MetaHookSv/include/HLSDK/common ^
-  /Ithirdparty/MetaHookSv/include/HLSDK/engine ^
-  /Ithirdparty/MetaHookSv/include/HLSDK/cl_dll ^
-  /Ithirdparty/MetaHookSv/include/HLSDK/pm_shared ^
-  /Ithirdparty/MetaHookSv/include/HLSDK/public ^
-  /Ithirdparty/MetaHookSv/include/SourceSDK ^
+  /I"%METAHOOK_SOURCE_PATH%/include" /I"%METAHOOK_SOURCE_PATH%/include/Interface" ^
+  /I"%METAHOOK_SOURCE_PATH%/include/HLSDK/common" ^
+  /I"%METAHOOK_SOURCE_PATH%/include/HLSDK/engine" ^
+  /I"%METAHOOK_SOURCE_PATH%/include/HLSDK/cl_dll" ^
+  /I"%METAHOOK_SOURCE_PATH%/include/HLSDK/pm_shared" ^
+  /I"%METAHOOK_SOURCE_PATH%/include/HLSDK/public" ^
+  /I"%METAHOOK_SOURCE_PATH%/include/SourceSDK" ^
   tests/engine_input_test.cpp /Fobuild/engine_input_test.obj ^
   /Febuild/engine_input_test.exe /link user32.lib
 build\engine_input_test.exe "C:\absolute\path\to\SDL2.dll"

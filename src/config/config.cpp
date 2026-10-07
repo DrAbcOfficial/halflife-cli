@@ -29,7 +29,7 @@ namespace
 		const toml::node* node = t[key].node();
 		if (!node)
 			return;
-		if (auto v = node->value<bool>())
+		if (auto v = node->value_exact<bool>())
 			out = *v;
 		else
 			gEngfuncs.Con_Printf("halflife-cli: %s: \"%.*s\" must be true or false, ignoring\n",
@@ -59,6 +59,7 @@ bool CliConfig::Load()
 
 	if (const toml::table* rcon = tbl["rcon"].as_table())
 	{
+		rcon_legacy_binding = rcon->contains("port") || rcon->contains("bind");
 		SetInt(*rcon, "port", rcon_port);
 		SetString(*rcon, "bind", rcon_bind);
 		SetString(*rcon, "password", rcon_password);
@@ -69,6 +70,7 @@ bool CliConfig::Load()
 		SetInt(*cli, "hide_window", hide_window);
 		SetBool(*cli, "block_input", block_input);
 		SetBool(*cli, "input_lock", input_lock);
+		SetBool(*cli, "focus_lock", focus_lock);
 		SetInt(*cli, "developer", developer);
 		SetBool(*cli, "capture", capture);
 		SetBool(*cli, "console", console);

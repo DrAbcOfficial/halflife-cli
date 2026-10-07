@@ -4,7 +4,9 @@
 #include "config/config.h"
 #include "console/console_bridge.h"
 #include "console/output_capture.h"
+#include "console/sys_error.h"
 #include "input/engine_input.h"
+#include "input/focus_lock.h"
 #include "input/input_lock.h"
 #include "rcon/rcon_server.h"
 #include "usermsg/usermsg_monitor.h"
@@ -19,28 +21,6 @@
 // Plugin lifecycle: MetaHook entry points, engine/client export overrides and
 // module wiring. The cli.* console commands live in cli_commands.cpp.
 
-// The plugin keeps its data in metahook/configs/halflifecli/; the engine
-// filesystem does not create folders on write, and a fresh install (or an
-// upgrade from the pre-subfolder layout) may not have it yet.
-static void EnsurePluginConfigDir()
-{
-	const char* gameDir = g_pMetaHookAPI->GetGameDirectory();
-	if (gameDir && *gameDir)
-		_mkdir((std::string(gameDir) + "\\metahook\\configs\\halflifecli").c_str());  // exists -> EEXIST, ignored
-}
-
-static void WritePortFile(unsigned short port)
-{
-	EnsurePluginConfigDir();
-	FileHandle_t fp = FILESYSTEM_ANY_OPEN("metahook/configs/halflifecli/halflifecli.port", "wb");
-	if (!fp)
-		return;
-	char buf[16];
-	int len = _snprintf_s(buf, sizeof(buf), _TRUNCATE, "%u\n", port);
-	FILESYSTEM_ANY_WRITE(buf, len, fp);
-	FILESYSTEM_ANY_CLOSE(fp);
-}
-
 void IPluginsV4::Init(metahook_api_t *pAPI, mh_interface_t *pInterface, mh_enginesave_t *pSave)
 {
 	g_pInterface = pInterface;
@@ -51,9 +31,11 @@ void IPluginsV4::Init(metahook_api_t *pAPI, mh_interface_t *pInterface, mh_engin
 void IPluginsV4::Shutdown(void)
 {
 	RconServer::Shutdown();
+	SysError::Shutdown();
 	ConsoleBridge::Shutdown();
 	OutputCapture::Shutdown();
 	InputLock::Shutdown();
+	FocusLock::Shutdown();
 	EngineInput::Shutdown();
 	UserMsgMonitor::Shutdown();
 }
@@ -66,13 +48,8 @@ void IPluginsV4::LoadEngine(cl_enginefunc_t *pEngfuncs)
 
 	memcpy(&gEngfuncs, pEngfuncs, sizeof(gEngfuncs));
 
-	CLI_Config().Load();
-
-	// Console capture registers with the VGUI2Extension plugin (its factory
-	// is up as soon as all plugin DLLs are loaded), so it can happen here in
-	// LoadEngine — no engine module scanning needed.
-	if (CLI_Config().capture)
-		OutputCapture::Install();
+	// The engine filesystem search paths are not ready here. Apply config
+	// and install optional backends in LoadClient, before the first host frame.
 }
 
 void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
@@ -84,6 +61,11 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	pExportFunc->HUD_Frame = HUD_Frame;
 
 	CLI_Config().Load();
+	if (CLI_Config().capture)
+		OutputCapture::Install();
+	else
+		OutputCapture::Shutdown();
+	RconServer::Install();
 	if (CLI_Config().usermsg_enabled)
 		UserMsgMonitor::Init();
 	if (CLI_Config().console)
@@ -96,6 +78,16 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	{
 		// Commands still run; only the output mirroring is lost.
 		ConsoleBridge::WriteOut("[halflife-cli] warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled");
+	}
+	// Fatal errors wipe the console with the process; hook the engine's error
+	// path as soon as stdout is wired so their text is already out (and logged)
+	// when the game goes down. A failure here only costs the mirroring, so it
+	// is a warning like the capture one above.
+	SysError::Install();
+	if (!SysError::Hooked())
+	{
+		ConsoleBridge::WriteOut(std::string("[halflife-cli] warning: Sys_Error not hooked (") +
+			SysError::HookError() + "), fatal errors will not be mirrored");
 	}
 	if (CLI_Config().hide_window)
 	{
@@ -111,42 +103,21 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	EngineInput::Install();
 	EngineInput::SetBlockInput(CLI_Config().block_input);
 
-	if (CLI_Config().rcon)
-	{
-		RconServer::StartResult r = RconServer::Start(
-			CLI_Config().rcon_bind,
-			(unsigned short)CLI_Config().rcon_port,
-			CLI_Config().rcon_password,
-			CLI_Config().rcon_allowed_ips);
+	// Applied on the engine's next activation if it has not activated yet.
+	FocusLock::Install();
+	FocusLock::SetActive(CLI_Config().focus_lock);
 
-		char banner[512];
-		if (r.ok)
-		{
-			// Automation discovers the port here, on stdout, and via the port file.
-			_snprintf_s(banner, sizeof(banner), _TRUNCATE,
-				"halflife-cli: RCON listening on %s:%u (password: %s)",
-				CLI_Config().rcon_bind.c_str(), r.port,
-				CLI_Config().rcon_password.empty() ? "none" : "set");
-			WritePortFile(r.port);
-		}
-		else
-		{
-			_snprintf_s(banner, sizeof(banner), _TRUNCATE,
-				"halflife-cli: RCON failed to start (%s)", r.error.c_str());
-		}
-		ConsoleBridge::WriteOut("halflife-cli " + std::string(GetVersion()) +
-			" loaded (engine: " + g_pMetaHookAPI->GetEngineTypeName() + ")");
-		ConsoleBridge::WriteOut(banner);
-		ConsoleBridge::WriteOut("type a console command and press ENTER; 'cli.help' for plugin commands");
-		gEngfuncs.Con_Printf("%s\n", banner);
-	}
+	ConsoleBridge::WriteOut("halflife-cli " + std::string(GetVersion()) +
+		" loaded (engine: " + g_pMetaHookAPI->GetEngineTypeName() + ")");
+	RconServer::OnClientReady();
 }
 
 void IPluginsV4::ExitGame(int iResult)
 {
-	RconServer::Shutdown();
+	RconServer::OnEngineShutdown();
 	ConsoleBridge::Shutdown();
 	InputLock::Shutdown();
+	FocusLock::OnExitGame();
 	EngineInput::OnExitGame();
 	WindowManager::Restore();
 	UserMsgMonitor::Shutdown();
@@ -157,6 +128,7 @@ void HUD_Init(void)
 	gExportfuncs.HUD_Init();
 
 	CliCommands::RegisterAll();
+	RconServer::RegisterCommands();
 
 	if (CLI_Config().developer > 0)
 		gEngfuncs.Cvar_SetValue("developer", (float)CLI_Config().developer);
@@ -178,7 +150,13 @@ int HUD_VidInit(void)
 void HUD_Frame(double time)
 {
 	WindowManager::ApplyConfiguredMode();
-	ConsoleBridge::PumpCommands();
+	if (!RconServer::UsesMainFrame())
+	{
+		ConsoleBridge::PumpCommands();
+		// A failed native UDP adapter (or Source TCP) has no Cbuf hook. Report its
+		// startup result once the game console is initialized on the first frame.
+		RconServer::AfterCommands();
+	}
 	UserMsgMonitor::Frame();
 
 	gExportfuncs.HUD_Frame(time);
