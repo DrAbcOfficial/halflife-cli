@@ -11,8 +11,13 @@
 // console from a terminal.
 namespace ConsoleBridge
 {
+	// LoadEngine: use existing stdout only, without config, allocation or stdin.
+	void InitEarlyOutput();
 	void Init();
-	void Shutdown();
+	// Apply console=false without discarding the shared RCON command/response queue.
+	void DisableConsole();
+	// ExitGame stops stdin but retains fatal output until plugin unload.
+	void Shutdown(bool preserveOutput = false);
 
 	// Runs on the engine thread (HUD_Frame): executes queued commands and
 	// finalizes pending RCON responses with the output captured since submit.

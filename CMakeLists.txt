@@ -142,6 +142,20 @@ if(BUILD_TESTING)
     target_compile_features(InputStateTest PRIVATE cxx_std_20)
     target_include_directories(InputStateTest PRIVATE src)
     add_test(NAME InputState COMMAND InputStateTest)
+    add_executable(EarlyConsoleTest
+        tests/early_console_test.cpp
+        src/core/plugins.cpp
+        src/core/exportfuncs.cpp
+        src/console/console_bridge.cpp
+        src/console/sys_error.cpp
+        "${METAHOOK_SOURCE_PATH}/include/HLSDK/common/interface.cpp")
+    target_compile_features(EarlyConsoleTest PRIVATE cxx_std_20)
+    target_include_directories(EarlyConsoleTest PRIVATE $<TARGET_PROPERTY:HalflifeCLI,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(EarlyConsoleTest PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    target_link_libraries(EarlyConsoleTest PRIVATE user32)
+    add_test(NAME EarlyConsole COMMAND "${Python3_EXECUTABLE}"
+        "${PROJECT_SOURCE_DIR}/tests/early_console_test.py" $<TARGET_FILE:EarlyConsoleTest>)
+    set_tests_properties(EarlyConsole PROPERTIES TIMEOUT 45)
 endif()
 
 # Optional Visual Studio F5 workflow: build HalflifeCLI, deploy it into the game

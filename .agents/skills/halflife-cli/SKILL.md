@@ -197,8 +197,11 @@ This is your main observability channel. It also carries
 `[halflife-cli] sys_error: ...`: the engine's `Sys_Error` (the path MetaHook
 reports its own load failures through) is hooked, so a fatal error's text is on
 stdout — and appended to `<mod>\metahook\configs\halflifecli\errors.log` — even
-though the game is about to die. Errors raised before this plugin loads are out
-of reach.
+though the game is about to die. The plugin wires existing stdout and registers
+the fatal hook in `LoadEngine`; MetaHook activates it after all `LoadEngine`
+callbacks return. Errors before that commit are out of reach. Config, console
+allocation, stdin and ordinary VGUI capture wait for `LoadClient`; `console=false`
+then disables stdout mirroring, while fatal file logging remains enabled.
 
 **Plugin commands** (alongside all normal game commands):
 `cli.help`, `cli.rconinfo` (current RCON endpoint), `cli.window <0|1|2>`

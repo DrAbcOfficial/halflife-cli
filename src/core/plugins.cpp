@@ -48,8 +48,10 @@ void IPluginsV4::LoadEngine(cl_enginefunc_t *pEngfuncs)
 
 	memcpy(&gEngfuncs, pEngfuncs, sizeof(gEngfuncs));
 
-	// The engine filesystem search paths are not ready here. Apply config
-	// and install optional backends in LoadClient, before the first host frame.
+	// Phase 1 needs no filesystem search paths or initialized client. MetaHook
+	// commits inline hooks after all plugins' LoadEngine callbacks return.
+	ConsoleBridge::InitEarlyOutput();
+	SysError::Install();
 }
 
 void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
@@ -61,17 +63,16 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	pExportFunc->HUD_Frame = HUD_Frame;
 
 	CLI_Config().Load();
+	// Phase 2: apply console policy before any optional backend can fail.
+	if (CLI_Config().console)
+		ConsoleBridge::Init();
+	else
+		ConsoleBridge::DisableConsole();
+
 	if (CLI_Config().capture)
 		OutputCapture::Install();
 	else
 		OutputCapture::Shutdown();
-	RconServer::Install();
-	if (CLI_Config().usermsg_enabled)
-		UserMsgMonitor::Init();
-	if (CLI_Config().console)
-	{
-		ConsoleBridge::Init();
-	}
 	// Report capture failure only after ConsoleBridge::Init: stdout is wired
 	// up there, earlier WriteOut calls would be dropped.
 	if (CLI_Config().capture && !OutputCapture::Available())
@@ -79,16 +80,16 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 		// Commands still run; only the output mirroring is lost.
 		ConsoleBridge::WriteOut("[halflife-cli] warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled");
 	}
-	// Fatal errors wipe the console with the process; hook the engine's error
-	// path as soon as stdout is wired so their text is already out (and logged)
-	// when the game goes down. A failure here only costs the mirroring, so it
-	// is a warning like the capture one above.
+	// Retry an early installation failure; successful hooks are idempotent.
 	SysError::Install();
 	if (!SysError::Hooked())
 	{
 		ConsoleBridge::WriteOut(std::string("[halflife-cli] warning: Sys_Error not hooked (") +
 			SysError::HookError() + "), fatal errors will not be mirrored");
 	}
+	RconServer::Install();
+	if (CLI_Config().usermsg_enabled)
+		UserMsgMonitor::Init();
 	if (CLI_Config().hide_window)
 	{
 		WindowManager::SetMode(CLI_Config().hide_window);
@@ -115,7 +116,7 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 void IPluginsV4::ExitGame(int iResult)
 {
 	RconServer::OnEngineShutdown();
-	ConsoleBridge::Shutdown();
+	ConsoleBridge::Shutdown(true);
 	InputLock::Shutdown();
 	FocusLock::OnExitGame();
 	EngineInput::OnExitGame();

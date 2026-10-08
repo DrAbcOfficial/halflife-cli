@@ -1,6 +1,7 @@
 #include "console/sys_error.h"
 
 #include "console/console_bridge.h"
+#include "console/output_capture.h"
 
 #include <metahook.h>
 
@@ -65,6 +66,7 @@ namespace
 		// Formatted here rather than forwarded: a variadic function cannot pass
 		// its va_list on, so the original receives our buffer as data.
 		const std::string text(message);
+		OutputCapture::Flush();
 		ConsoleBridge::WriteOut(CONSOLE_PREFIX + text);
 		AppendLog(DataDirectory(), text + "\n");
 

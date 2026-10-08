@@ -4,16 +4,15 @@
 // the CLI console and to <mod>/metahook/configs/halflifecli/errors.log before
 // the game dies. MetaHook reports its own load failures through the same
 // engine function (MH_SysError calls the pfnSys_Error it resolved), so one hook
-// covers engine, MetaHook and plugin fatal errors raised after this plugin has
-// loaded — errors raised before it load are out of reach.
+// covers errors after MetaHook commits the LoadEngine hook transaction. Earlier
+// errors (including other LoadEngine callbacks in that transaction) are out of reach.
 //
 // The original function is always called last: the dialog, the exit path and
 // every other behaviour are unchanged.
 namespace SysError
 {
-	// Call from LoadClient, after ConsoleBridge::Init has wired stdout up. The
-	// hook is installed even when the console bridge is off; the log file is
-	// written either way.
+	// Call from LoadEngine after InitEarlyOutput; retry from LoadClient if needed.
+	// The log file is written even when the configured console bridge is off.
 	void Install();
 
 	// Call on unload only. An engine shutdown is itself a path a fatal error

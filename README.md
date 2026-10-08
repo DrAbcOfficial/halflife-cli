@@ -269,9 +269,18 @@ The first `uv run` downloads the dependencies, which can take a minute.
   `[halflife-cli] sys_error: ...` and appended to
   `<mod>\metahook\configs\halflifecli\errors.log` before the game goes down.
   The original is called last, so the dialog and the exit path are unchanged.
-  Errors raised before this plugin loads (e.g. MetaHook failing to read its
-  own gamedata) stay out of reach, and a `warning: Sys_Error not hooked` line
-  reports an engine whose gamedata has no such symbol.
+  Initialization has two phases: `LoadEngine` uses an existing stdout handle
+  and registers the fatal hook without reading config, allocating a console,
+  or starting stdin. `LoadClient` reads config and enables the full bridge
+  before initializing optional backends. `console=false` disables stdout
+  mirroring once config is applied; fatal errors still append to `errors.log`.
+  Ordinary VGUI console capture starts only in the second phase. Pending text
+  without a newline is flushed before the fatal message is exported.
+  MetaHook commits inline hooks after all `LoadEngine` callbacks return, so
+  errors within that transaction or before plugin loading (e.g. missing
+  MetaHook gamedata) remain out of reach. A `warning: Sys_Error not hooked`
+  line reports a hook installation failure after a second-phase retry.
+  Stdin stops at `ExitGame`; fatal output remains available until plugin unload.
 - **UserMsg monitor**: every server user message the game receives is decoded
   per a TOML schema and printed as one `[usermsg] Name size=N field=value ...`
   console line (see below). `cli.usermsg` reports the hook state;
