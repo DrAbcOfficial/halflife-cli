@@ -318,6 +318,24 @@ or the original WindowProc trampoline, without generating OS input. There
 is no separate VGUI input filter. Missing backends fall back to disabling
 the game window.
 
+`cli.mousemove absolute <x> <y>` positions the UI cursor in original screenshot
+pixels; `cli.mousemove relative <dx> <dy>` adds a displacement, and
+`cli.mousemove` queries the position. Both SDL2 and legacy WindowProc engines
+support this. Coordinates are scaled to the client area and clamped to its
+bounds. Subsequent `cli.trapmouse` clicks use that position. This is UI motion;
+use `+left` / `+right` / `+lookup` / `+lookdown` for FPS view turning.
+
+On legacy engines, engine/VGUI `GetCursorPos` imports read the virtual cursor
+in desktop coordinates without moving the real mouse. Their `SetCursorPos`
+warps are swallowed while the virtual cursor owns the position, including
+recentres on later frames. Client view sampling retains its separate
+`input_lock` behavior. A MetaHook DLL-load notification installs cursor hooks
+for VGUI DLLs loaded after `LoadClient`, so per-frame UI polling preserves the
+injected control's mouse focus. Allowed physical mouse motion takes ownership back;
+`cli.blockinput on` keeps physical motion from taking over. A legacy backend
+missing the engine's cursor imports reports an error for motion, while its
+existing key/button injection and window fallback behavior remain available.
+
 Key names use engine `bind` names; numeric keys without a native keyboard
 mapping are rejected. Mouse masks describe all held buttons, and are
 translated into individual transitions. `MOUSE1`–`MOUSE5` use the same path
