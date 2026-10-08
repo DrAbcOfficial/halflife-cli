@@ -18,7 +18,9 @@ jobs:
       - name: Download packaged archive
         uses: actions/download-artifact@v8.0.2
         with:
-          name: HalflifeCLI-windows-x86
+          # upload-artifact with archive:false names the artifact after the
+          # file, extension included.
+          name: HalflifeCLI-windows-x86.7z
 
       - name: Hash the archive
         run: sha256sum HalflifeCLI-windows-x86.7z > HalflifeCLI-windows-x86.7z.sha256
