@@ -22,9 +22,23 @@ build\engine_input_test.exe "C:\absolute\path\to\SDL2.dll"
 Use a **32-bit** SDL2 DLL. Dependencies such as SDL3.dll must be alongside it.
 The harness loads the actual runtime, tests event filtering and injection,
 filter chaining/restoration, button transitions and error paths. A recording
-trampoline checks legacy WindowProc messages and scan-code flags. It does not
+trampoline checks legacy WindowProc messages and scan-code flags, scaled motion,
+button coordinates, synchronous cursor reads, later-frame recentres, resize,
+failed dispatch and physical takeover. Mock user32 functions use a negative
+desktop origin to catch client/screen coordinate confusion. It does not
 launch a game or synthesize OS input; legacy gamedata resolution and actual
 legacy game dispatch still need an integration test on that engine.
+
+Legacy acceptance (CoF 5936, 800x600, off-screen window): move to `(400, 503)`
+and click to open Options, then move to `(245, 142)` and click to select Mouse.
+Check the resulting screenshot, not just the command's position reply. VGUI
+loads after `LoadClient` on this engine; without a DLL-load notification
+installing its cursor import hooks, `InternalCursorMoved` receives the target
+but the next `CVGui::RunFrame`
+reads the desktop cursor and clears mouse focus. Keep both moves and clicks
+on separate command/frame boundaries to expose this regression. Reference:
+`vgui2/src/vgui.cpp` (`GetCursorPos` then `UpdateMouseFocus`) and
+`vgui2/src/InputWin32.cpp` in the engine reference source.
 
 Native SDL2 2.32.10 and sdl2-compat-fork with fix `c24acad` pass. The wheel
 checks cover up/down pulses, release without duplication, injection bypass,

@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include <cctype>
+#include <climits>
 #include <atomic>
 #include <cstdlib>
 #include <string>
@@ -65,6 +66,17 @@ namespace
 		int(__cdecl* SDL_PollEvent)(SDLEvent*) = nullptr;
 		int(__cdecl* SDL_WaitEventTimeout)(SDLEvent*, int) = nullptr;
 	} gRealFuncs;
+	// These imports belong to the UI/engine, not the client's view sampler.
+	// Keep screen coordinates at the user32 boundary and client pixels in MouseState.
+	struct LegacyFuncs
+	{
+		decltype(&::GetCursorPos) GetCursorPos = ::GetCursorPos;
+		decltype(&::SetCursorPos) SetCursorPos = ::SetCursorPos;
+		decltype(&::ScreenToClient) ScreenToClient = ::ScreenToClient;
+		decltype(&::ClientToScreen) ClientToScreen = ::ClientToScreen;
+	} gLegacyFuncs;
+	bool g_hookedLegacyGet = false, g_hookedLegacySet = false;
+	bool g_legacyLoadNotificationRegistered = false;
 	bool g_sdlFilterInstalled = false;
 	SDLFilter g_previousFilter = nullptr;
 	void* g_previousFilterData = nullptr;
@@ -111,6 +123,8 @@ namespace
 		return g_previousFilter ? g_previousFilter(g_previousFilterData, event) : 1;
 	}
 
+	bool SyncMouseGeometry();
+
 	int __fastcall HookedWindowProc(void* self, int, HWND window, UINT msg, WPARAM wp, LPARAM lp)
 	{
 		// Capture the real CGame instance; only the function needs gamedata.
@@ -120,6 +134,8 @@ namespace
 			(g_legacyWheelMessage && msg == g_legacyWheelMessage);
 		if ((keyboard || mouse) && BlockEvent(keyboard))
 			return 0;
+		if (msg == WM_MOUSEMOVE && SyncMouseGeometry())
+			g_mouse.ObserveMotion({ (short)LOWORD(lp), (short)HIWORD(lp) }, false, false);
 		return gPrivateFuncs.CGame_WindowProc(self, 0, window, msg, wp, lp);
 	}
 
@@ -133,6 +149,7 @@ namespace
 	}
 
 	void HookEngineMouseImports();
+	void HookLegacyMouseImports();
 
 	void InstallEngineHooks()
 	{
@@ -172,7 +189,7 @@ namespace
 				return;
 			}
 			void* proc = nullptr;
-			if (!Resolve("CGame_WindowProc", MH_GAMESYMBOL_KIND_FUNCTION, &proc))
+			if (!Resolve("CGame::WindowProc", MH_GAMESYMBOL_KIND_FUNCTION, &proc))
 				return;
 			g_legacyWheelMessage = RegisterWindowMessageA("MSWHEEL_ROLLMSG");
 			g_windowHook = g_pMetaHookAPI->InlineHook(proc, (void*)HookedWindowProc,
@@ -277,10 +294,28 @@ namespace
 			g_engineHooksError = "game image or window has no valid size";
 			return false;
 		}
+		// WM_MOUSEMOVE and button LPARAMs contain signed 16-bit client pixels.
+		if (!g_sdlFilterInstalled && (geometry.windowWidth > SHRT_MAX + 1 || geometry.windowHeight > SHRT_MAX + 1))
+		{
+			g_engineHooksError = "game window exceeds Win32 mouse coordinate range";
+			return false;
+		}
 		if (!g_mouse.HasVirtualPosition())
 		{
 			int x = 0, y = 0;
-			gRealFuncs.SDL_GetMouseState(&x, &y);
+			if (g_sdlFilterInstalled)
+				gRealFuncs.SDL_GetMouseState(&x, &y);
+			else
+			{
+				POINT point{};
+				if (!gLegacyFuncs.GetCursorPos(&point) || !gLegacyFuncs.ScreenToClient((HWND)window, &point))
+				{
+					g_engineHooksError = "cannot read game cursor position";
+					return false;
+				}
+				x = point.x;
+				y = point.y;
+			}
 			g_mouse.Seed({ x, y });
 			if (g_block.load())
 				g_mouse.KeepVirtualPosition();
@@ -288,17 +323,84 @@ namespace
 		return true;
 	}
 
-	// The virtual cursor needs the SDL2 backend and the engine imports
-	// through which the engine reads, warps and dispatches the cursor.
+	// Each backend needs both dispatch and cursor read/warp interception.
 	bool VirtualMouseReady()
 	{
 		if (!g_sdlFilterInstalled)
-			g_engineHooksError = "mouse motion needs the SDL2 input backend";
+		{
+			if (g_windowHook && g_hookedLegacyGet && g_hookedLegacySet)
+				return true;
+			g_engineHooksError = "engine Win32 cursor imports not hooked";
+		}
 		else if (!g_hookedMouseState || !g_hookedPollEvent || !g_hookedWaitEvent)
 			g_engineHooksError = "engine SDL mouse imports not hooked";
 		else
 			return true;
 		return false;
+	}
+
+	BOOL WINAPI Hooked_LegacyGetCursorPos(LPPOINT point)
+	{
+		if (point && g_windowHook && SyncMouseGeometry() && g_mouse.HasVirtualPosition())
+		{
+			auto position = g_mouse.WindowPosition();
+			POINT screen{ position.x, position.y };
+			if (!gLegacyFuncs.ClientToScreen((HWND)WindowManager::GetGameWindow(), &screen))
+				return FALSE;
+			*point = screen;
+			return TRUE;
+		}
+		return gLegacyFuncs.GetCursorPos(point);
+	}
+
+	BOOL WINAPI Hooked_LegacySetCursorPos(int x, int y)
+	{
+		// Legacy engines also recentre outside WindowProc, on subsequent frames.
+		// Keep the injected UI position until an allowed physical motion takes over.
+		// A transient invalid window size must not let a recentre reach user32.
+		if (g_windowHook && (g_mouse.HasVirtualPosition() ||
+			(SyncMouseGeometry() && g_mouse.HasVirtualPosition())))
+			return TRUE;
+		return gLegacyFuncs.SetCursorPos(x, y);
+	}
+
+	void HookLegacyUIMouseImports(HMODULE module, BlobHandle_t blob)
+	{
+		ImportHook::Hook(module, blob, "user32.dll", "GetCursorPos", Hooked_LegacyGetCursorPos);
+		ImportHook::Hook(module, blob, "user32.dll", "SetCursorPos", Hooked_LegacySetCursorPos);
+	}
+
+	void LegacyDllLoaded(mh_load_dll_notification_context_t* context)
+	{
+		if (!(context->flags & LOAD_DLL_NOTIFICATION_IS_LOAD) || !context->BaseDllName)
+			return;
+		for (const wchar_t* name : { L"vgui.dll", L"vgui2.dll", L"GameUI.dll" })
+		{
+			if (!_wcsicmp(context->BaseDllName, name))
+			{
+				// Use the notified module directly; do not load DLLs or query game
+				// state under the loader lock. MetaHook commits this hook transaction.
+				HookLegacyUIMouseImports(context->hModule, context->hBlob);
+				return;
+			}
+		}
+	}
+
+	void HookLegacyMouseImports()
+	{
+		HMODULE engine = g_pMetaHookAPI->GetEngineModule();
+		BlobHandle_t blob = engine ? nullptr : g_pMetaHookAPI->GetBlobEngineModule();
+		g_hookedLegacyGet |= ImportHook::Hook(engine, blob, "user32.dll", "GetCursorPos", Hooked_LegacyGetCursorPos);
+		g_hookedLegacySet |= ImportHook::Hook(engine, blob, "user32.dll", "SetCursorPos", Hooked_LegacySetCursorPos);
+		// VGUI can query user32 directly, bypassing the engine's surface API.
+		// Client imports stay with InputLock: returning UI pixels there would
+		// feed a nonzero delta to IN_Accumulate every frame.
+		for (const char* name : { "vgui.dll", "vgui2.dll", "GameUI.dll" })
+		{
+			HMODULE module = GetModuleHandleA(name);
+			if (!module) continue;
+			HookLegacyUIMouseImports(module, nullptr);
+		}
 	}
 
 	bool PushMouseMotion(InputState::MousePosition target, InputState::MousePosition delta)
@@ -430,6 +532,27 @@ namespace
 		return true;
 	}
 
+	WPARAM LegacyButtonState(int mask)
+	{
+		const unsigned flags[] = { MK_LBUTTON, MK_RBUTTON, MK_MBUTTON, MK_XBUTTON1, MK_XBUTTON2 };
+		WPARAM state = 0;
+		for (int i = 0; i < MOUSE_BUTTONS_COUNT; ++i)
+			if (mask & (1 << i)) state |= flags[i];
+		return state;
+	}
+
+	bool PushLegacyMouseMotion(InputState::MousePosition target, InputState::MousePosition)
+	{
+		// WindowProc dispatch is synchronous. Queries made inside it must see
+		// the target already; restore the state if dispatch cannot start.
+		auto previous = g_mouse;
+		g_mouse.ObserveMotion(target, true, false);
+		if (CallWindowProc(WM_MOUSEMOVE, LegacyButtonState(g_mouseButtons), MAKELPARAM(target.x, target.y)))
+			return true;
+		g_mouse = previous;
+		return false;
+	}
+
 	bool SendButton(int index, bool down)
 	{
 		const int bit = 1 << index;
@@ -455,12 +578,15 @@ namespace
 		else
 		{
 			const UINT messages[] = { WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN, WM_XBUTTONDOWN };
-			const unsigned flags[] = { MK_LBUTTON, MK_RBUTTON, MK_MBUTTON, MK_XBUTTON1, MK_XBUTTON2 };
-			WPARAM wp = 0;
-			for (int i = 0; i < MOUSE_BUTTONS_COUNT; ++i)
-				if (mask & (1 << i)) wp |= flags[i];
+			WPARAM wp = LegacyButtonState(mask);
 			if (index >= 3) wp |= (index == 3 ? XBUTTON1 : XBUTTON2) << 16;
-			ok = CallWindowProc(messages[index] + (down ? 0 : 1), wp, 0);
+			LPARAM position = 0;
+			if (g_hookedLegacyGet && g_hookedLegacySet && SyncMouseGeometry())
+			{
+				auto cursor = g_mouse.WindowPosition();
+				position = MAKELPARAM(cursor.x, cursor.y);
+			}
+			ok = CallWindowProc(messages[index] + (down ? 0 : 1), wp, position);
 		}
 		if (ok) g_mouseButtons = mask;
 		return ok;
@@ -500,13 +626,25 @@ namespace EngineInput
 	void Install()
 	{
 		InstallEngineHooks();
+		if (g_windowHook)
+		{
+			// VGUI may load after LoadClient. Subscribe before the initial sweep
+			// so its per-frame cursor polling cannot miss the virtual position.
+			if (!g_legacyLoadNotificationRegistered)
+			{
+				g_pMetaHookAPI->RegisterLoadDllNotificationCallback(LegacyDllLoaded);
+				g_legacyLoadNotificationRegistered = true;
+			}
+			HookLegacyMouseImports();
+		}
 		ApplyWindowFallback();
 	}
 
 	void SetBlockInput(bool block)
 	{
-		// Freeze the last accepted position before SDL can sample blocked motion.
-		if (block && !g_block.load() && g_sdlFilterInstalled && SyncMouseGeometry())
+		// Freeze the last accepted position before a backend samples blocked motion.
+		bool cursorBackend = g_sdlFilterInstalled || (g_windowHook && g_hookedLegacyGet && g_hookedLegacySet);
+		if (block && !g_block.load() && cursorBackend && SyncMouseGeometry())
 			g_mouse.KeepVirtualPosition();
 		g_block = block;
 		ApplyWindowFallback();
@@ -624,7 +762,8 @@ namespace EngineInput
 		if (!EngineHooksInstalled())
 			return false;
 		g_engineHooksError.clear();
-		return VirtualMouseReady() && SyncMouseGeometry() && g_mouse.Move(x, y, relative, PushMouseMotion);
+		return VirtualMouseReady() && SyncMouseGeometry() &&
+			g_mouse.Move(x, y, relative, g_sdlFilterInstalled ? PushMouseMotion : PushLegacyMouseMotion);
 	}
 
 	bool GetMousePosition(int& x, int& y)
@@ -664,6 +803,11 @@ namespace EngineInput
 
 	void OnExitGame()
 	{
+		if (g_legacyLoadNotificationRegistered)
+		{
+			g_pMetaHookAPI->UnregisterLoadDllNotificationCallback(LegacyDllLoaded);
+			g_legacyLoadNotificationRegistered = false;
+		}
 		if (g_sdlFilterInstalled)
 		{
 			SDLFilter current = nullptr;

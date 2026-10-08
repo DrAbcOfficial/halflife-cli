@@ -114,6 +114,15 @@ namespace
 
 namespace OutputCapture
 {
+	void Flush()
+	{
+		std::lock_guard<std::mutex> lock(g_cap.mutex);
+		if (g_cap.partial.empty())
+			return;
+		EmitLine(std::move(g_cap.partial));
+		g_cap.partial.clear();
+	}
+
 	bool Install()
 	{
 		// LoadClient re-runs on every map change; register only once.
@@ -135,6 +144,9 @@ namespace OutputCapture
 			g_pVGUI2Extension->UnregisterGameConsoleCallbacks(&s_GameConsoleCallbacks);
 			g_pVGUI2Extension = nullptr;
 		}
+		// A disabled/restarted capture must not publish an old partial later.
+		std::lock_guard<std::mutex> lock(g_cap.mutex);
+		g_cap.partial.clear();
 	}
 
 	uint64_t NextSeq()

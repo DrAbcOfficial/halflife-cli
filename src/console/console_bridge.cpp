@@ -43,6 +43,8 @@ namespace
 		std::thread stdinThread;
 		std::atomic<uint64_t> nextToken{ 1 };
 		std::atomic<bool> running{ false };
+		std::mutex outputMutex;
+		bool outputInitialized = false;
 		bool hasRealConsole = false;
 		uint64_t frameCount = 0;
 	};
@@ -50,6 +52,7 @@ namespace
 
 	void WriteOutLocked(const std::string& text)
 	{
+		std::lock_guard<std::mutex> lock(g_bridge.outputMutex);
 		if (!g_bridge.hasRealConsole)
 			return;
 		fputs(text.c_str(), stdout);
@@ -79,10 +82,46 @@ namespace
 				ConsoleBridge::SubmitCommand(line);
 		}
 	}
+
+	void StopStdin()
+	{
+		g_bridge.running = false;
+		if (g_bridge.stdinThread.joinable())
+		{
+			// Cancellation can race the reader entering getline. Retry until it
+			// exits, then join before an engine restart can unload this DLL.
+			HANDLE reader = static_cast<HANDLE>(g_bridge.stdinThread.native_handle());
+			while (WaitForSingleObject(reader, 0) == WAIT_TIMEOUT)
+			{
+				CancelSynchronousIo(reader);
+				WaitForSingleObject(reader, 50);
+			}
+			g_bridge.stdinThread.join();
+		}
+	}
+
+	void DisableOutput()
+	{
+		OutputCapture::SetSink(nullptr);
+		std::lock_guard<std::mutex> lock(g_bridge.outputMutex);
+		g_bridge.hasRealConsole = false;
+		g_bridge.outputInitialized = false;
+	}
 }
 
 namespace ConsoleBridge
 {
+	void InitEarlyOutput()
+	{
+		std::lock_guard<std::mutex> lock(g_bridge.outputMutex);
+		if (g_bridge.outputInitialized)
+			return;
+		const HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+		g_bridge.hasRealConsole = output != NULL && output != INVALID_HANDLE_VALUE &&
+			GetFileType(output) != FILE_TYPE_UNKNOWN;
+		g_bridge.outputInitialized = true;
+	}
+
 	void WriteOut(const std::string& text)
 	{
 		WriteOutLocked(text);
@@ -109,8 +148,11 @@ namespace ConsoleBridge
 			if (AllocConsole())
 			{
 				FILE *f = nullptr;
-				freopen_s(&f, "CONOUT$", "wb", stdout);
-				freopen_s(&f, "CONIN$", "rb", stdin);
+				// Keep an existing automation pipe even when its other half is absent.
+				if (!outOk)
+					freopen_s(&f, "CONOUT$", "wb", stdout);
+				if (!inOk)
+					freopen_s(&f, "CONIN$", "rb", stdin);
 				freopen_s(&f, "CONOUT$", "wb", stderr);
 				SetConsoleTitleA("halflife-cli");
 				// HWND_TOPMOST is a persistent z-order band, so setting it once
@@ -129,36 +171,43 @@ namespace ConsoleBridge
 
 		// stdout may be writable while stdin is not (RCON-only mode); the
 		// reader thread only starts when stdin is usable.
-		g_bridge.hasRealConsole = outOk;
+		{
+			std::lock_guard<std::mutex> lock(g_bridge.outputMutex);
+			g_bridge.hasRealConsole = outOk;
+			g_bridge.outputInitialized = true;
+		}
 
 		OutputCapture::SetSink(CaptureSink);
 
 		if (inOk)
+		{
+			std::cin.clear();
 			g_bridge.stdinThread = std::thread(StdinThreadMain);
+		}
 	}
 
-	void Shutdown()
+	void DisableConsole()
 	{
-		if (!g_bridge.running.exchange(false))
-			return;
-		if (g_bridge.stdinThread.joinable())
-		{
-			// Cancellation can race the reader entering getline. Retry until it
-			// exits, then join before an engine restart can unload this DLL.
-			HANDLE reader = static_cast<HANDLE>(g_bridge.stdinThread.native_handle());
-			while (WaitForSingleObject(reader, 0) == WAIT_TIMEOUT)
-			{
-				CancelSynchronousIo(reader);
-				WaitForSingleObject(reader, 50);
-			}
-			g_bridge.stdinThread.join();
-		}
+		StopStdin();
+		DisableOutput();
+	}
+
+	void Shutdown(bool preserveOutput)
+	{
+		StopStdin();
 		{
 			std::lock_guard<std::mutex> lock(g_bridge.respMutex);
 			g_bridge.pending.clear();
 			g_bridge.completed.clear();
 			g_bridge.respCv.notify_all();
 		}
+		{
+			std::lock_guard<std::mutex> lock(g_bridge.queueMutex);
+			g_bridge.queue.clear();
+		}
+		g_bridge.frameCount = 0;
+		if (!preserveOutput)
+			DisableOutput();
 	}
 
 	uint64_t SubmitCommand(const std::string& cmd)
