@@ -69,20 +69,31 @@ jobs:
           assert isinstance(cfg["rcon"]["password"], str)
           print("halflifecli.toml parsed with the expected key types")
 
-      # Package the whole game-dir layout the install rules produced. Extract
-      # into a Sven Co-op root to install the plugin, config and gamedata.
+      # Package the whole game-dir layout the install rules produced, plus the
+      # MCP tooling and a kit README. Extracting into a Sven Co-op root
+      # installs the plugin, config and gamedata; mcp\ can live anywhere.
       - name: Package release 7z
         id: package
         shell: pwsh
         working-directory: install/x86/Release
         run: |
+          # Runtime modules only: what halflife_mcp.py imports, nothing test-only.
+          $mcpSource = Join-Path $env:GITHUB_WORKSPACE 'mcp'
+          $mcpDest = Join-Path $PWD 'mcp'
+          New-Item -ItemType Directory -Path (Join-Path $mcpDest 'halflifecli') -Force | Out-Null
+          foreach ($name in @('halflife_mcp.py', 'game_process.py', 'rcon_client.py', 'find_game.py')) {
+            Copy-Item -LiteralPath (Join-Path $mcpSource $name) -Destination $mcpDest
+          }
+          Copy-Item -Path (Join-Path $mcpSource 'halflifecli\*.py') -Destination (Join-Path $mcpDest 'halflifecli')
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'scripts\release-kit-readme.txt') -Destination (Join-Path $PWD 'README.txt')
+
           $archiveDirectory = Join-Path $env:GITHUB_WORKSPACE 'build/artifacts'
           New-Item -ItemType Directory -Path $archiveDirectory -Force | Out-Null
           $archivePath = Join-Path $archiveDirectory 'HalflifeCLI-windows-x86.7z'
           if (Test-Path -LiteralPath $archivePath -PathType Leaf) {
             Remove-Item -LiteralPath $archivePath
           }
-          & 7z a -t7z $archivePath 'svencoop'
+          & 7z a -t7z $archivePath 'svencoop' 'mcp' 'README.txt'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & 7z t $archivePath
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

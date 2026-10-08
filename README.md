@@ -230,7 +230,9 @@ python mcp\halflife_mcp.py
 
 No client config file is committed: the script path is machine-local, so
 registering the server is an installation step on the machine that built the
-checkout, not something the repository can carry. Register it at **user scope**
+checkout, not something the repository can carry. Release archives ship the
+runtime `mcp/` files, so on an end machine you can register straight from the
+extracted archive. Register it at **user scope**
 so it stays available in every project, with an absolute path to this checkout:
 
 ```bat
@@ -490,7 +492,10 @@ uses.
 The archive contains the plugin DLL, its PDB, the `halflifecli.toml` config
 template, the usermsg schemas and the required gamedata
 (`svencoop/metahook/{plugins,configs/halflifecli,gamedata/halflifecli}`), so
-extracting it into a Sven Co-op root installs everything:
+extracting it into a Sven Co-op root installs the plugin side. It also ships
+the MCP tooling under `mcp/` (the server plus the local modules it imports,
+nothing test-only) and a kit README, so the same archive carries everything
+needed to drive the game; the `mcp\` folder is location-independent.
 
 ```bat
 git tag v0.1.0
