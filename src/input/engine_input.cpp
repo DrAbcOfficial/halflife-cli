@@ -172,7 +172,7 @@ namespace
 				return;
 			}
 			void* proc = nullptr;
-			if (!Resolve("CGame_WindowProc", MH_GAMESYMBOL_KIND_FUNCTION, &proc))
+			if (!Resolve("CGame::WindowProc", MH_GAMESYMBOL_KIND_FUNCTION, &proc))
 				return;
 			g_legacyWheelMessage = RegisterWindowMessageA("MSWHEEL_ROLLMSG");
 			g_windowHook = g_pMetaHookAPI->InlineHook(proc, (void*)HookedWindowProc,

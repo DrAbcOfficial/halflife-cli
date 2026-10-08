@@ -53,6 +53,23 @@
       "sizebuf_t_cursize_offset": "scalar"
     }
   },
+  "conditionalGroups": [
+    {
+      "when": [
+        "cof-5936",
+        "hl-3248",
+        "hl-3266",
+        "hl-3329",
+        "hl-3647",
+        "hl-4554"
+      ],
+      "symbols": {
+        "engine": {
+          "CGame::WindowProc": "function"
+        }
+      }
+    }
+  ],
   "symbolExemptions": {
     "SV_HandleRconPacket": ["hl-10210"],
     "SV_CheckRconFailure": ["hl-10210"],
