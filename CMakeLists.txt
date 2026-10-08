@@ -113,7 +113,10 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/configs/usermsgs/"
 
 # The same direct consumer workflow used by MetaHookSv plugins: synchronize
 # upstream snapshots, then enforce this plugin's required-symbol manifest.
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# scripts/sync-gamedata.py requires Python 3.8 (checked again at runtime);
+# enforce it at configure time so the failure is a clear message, not a script
+# error mid-build.
+find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
 set(HALFLIFECLI_GAMEDATA_DIR "${PROJECT_BINARY_DIR}/metahook/gamedata/halflifecli")
 add_custom_target(HalflifeCLIGameData
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/sync-gamedata.py"
@@ -155,7 +158,16 @@ if(BUILD_TESTING)
     target_link_libraries(EarlyConsoleTest PRIVATE user32)
     add_test(NAME EarlyConsole COMMAND "${Python3_EXECUTABLE}"
         "${PROJECT_SOURCE_DIR}/tests/early_console_test.py" $<TARGET_FILE:EarlyConsoleTest>)
-    set_tests_properties(EarlyConsole PROPERTIES TIMEOUT 45)
+	set_tests_properties(EarlyConsole PROPERTIES TIMEOUT 45)
+
+	# Compile-only regression harness (see tests/README.md): at runtime it loads
+	# a real 32-bit SDL2.dll, so it has no add_test here; building it in the
+	# default target still keeps CI from shipping compile breaks.
+	add_executable(EngineInputTest tests/engine_input_test.cpp)
+	target_compile_features(EngineInputTest PRIVATE cxx_std_20)
+	target_include_directories(EngineInputTest PRIVATE $<TARGET_PROPERTY:HalflifeCLI,INCLUDE_DIRECTORIES>)
+	target_compile_definitions(EngineInputTest PRIVATE NOMINMAX _CRT_SECURE_NO_WARNINGS)
+	target_link_libraries(EngineInputTest PRIVATE user32)
 endif()
 
 # Optional Visual Studio F5 workflow: build HalflifeCLI, deploy it into the game
