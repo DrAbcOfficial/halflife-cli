@@ -206,11 +206,14 @@ then disables stdout mirroring, while fatal file logging remains enabled.
 **Plugin commands** (alongside all normal game commands):
 `cli.help`, `cli.rconinfo` (current RCON endpoint), `cli.window <0|1|2>`
 (0=show, 1=off-screen default, 2=SW_HIDE), `cli.inputlock [on|off]` (mouse
-motion stops driving the view), `cli.blockinput [on|off]` (the game ignores
+motion stops driving the view), `cli.focuslock [on|off]` (keep the game
+internally active while unfocused/hidden; no argument reports the state),
+`cli.blockinput [on|off]` (the game ignores
 the physical keyboard and mouse buttons; no argument reports the hook state
 and blocked-event counters), `cli.trapkey <key> <0|1>` /
 `cli.trapmouse <buttons> <0|1>` (inject input, see "Sending keyboard and
-mouse input"), and `cli.find <name>` — check
+mouse input"), `cli.mousemove absolute <x> <y>` / `relative <dx> <dy>`
+(position the UI cursor, see the same section), and `cli.find <name>` — check
 whether a cvar or console command exists before using it. On a hit it prints
 what it is and its value (passwords masked as `**`), e.g.
 `cli.find: "sv_cheats" exists (cvar, value "0")`; on a miss it prints up to
@@ -257,11 +260,18 @@ visible window, and passes `block_input`.
   input events; use console commands for text entry.
 - Wheel press is one pulse (the engine generates both key edges); release
   does nothing. sdl2-compat requires the integer wheel conversion fix from
-  `sdl2-compat-fork` commit `c24acad` (or a version containing it). Unpatched
+  [hzqst/sdl2-compat-fork](https://github.com/hzqst/sdl2-compat-fork) commit
+  [`c24acad`](https://github.com/hzqst/sdl2-compat-fork/commit/c24acad) (or a
+  version containing it). Unpatched
   2.32.57 loses the integer delta; patched builds pass both directions.
-- There is no mouse *motion* injection. To turn or aim, use commands such as
+- There is no view-motion injection: to turn or aim, use commands such as
   `+left` / `+right` / `+lookup` / `+lookdown` (speed from `cl_yawspeed` /
-  `cl_pitchspeed`).
+  `cl_pitchspeed`). To move the *UI cursor* (menus, dialogs), use
+  `cli.mousemove absolute <x> <y>` — coordinates are in original screenshot
+  pixels, scaled to the client area and clamped to its bounds — or
+  `cli.mousemove relative <dx> <dy>`; bare `cli.mousemove` queries the
+  position. Subsequent `cli.trapmouse` clicks press at that position. Both
+  SDL2 and legacy WindowProc engines support this.
 - Verify a key did something by binding it to an `echo` first
   (`bind k "echo K_PRESSED"`, then `send_key("k")`, then look for the line).
 
@@ -293,7 +303,9 @@ If you can read images, capture and view the game like this:
 
 ```python
 import glob, os
-shots_dir = os.path.join(game_dir, "svencoop", "screenshots")
+# mod_dir is the resolved mod directory: <game>\svencoop for Sven Co-op,
+# the target's mod (e.g. <game>\cstrike) for another app.
+shots_dir = os.path.join(mod_dir, "screenshots")
 shots = [p for p in glob.glob(os.path.join(shots_dir, "*"))
          if p.lower().endswith((".tga", ".bmp", ".png", ".jpg", ".jpeg"))]
 newest = max(shots, key=os.path.getmtime)
@@ -330,19 +342,26 @@ allowed_ips = ""
 
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
+capture = true              # capture console output via VGUI2Extension GameConsole callbacks
+console = true              # CLI console bridge: stdin commands + stdout mirror
 block_input = true          # true = the game ignores the physical keyboard/mouse buttons (injected input still passes)
 input_lock = true           # true = physical mouse motion stops driving the view
+focus_lock = true           # keep the game internally active while unfocused/hidden (cli.focuslock toggles at runtime)
 developer = 1
 console_topmost = false     # keep the CLI console window always on top
+rcon = true                 # false leaves native engine networking/authentication untouched
 ```
 
 Build and install from the repo root:
 
 ```bat
-cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
+cmake -S . -B build -A Win32
 cmake --build build --config Release
 scripts\install_plugin.bat              ; optional arg: game dir
 ```
+
+No generator is specified: CMake picks the newest installed Visual Studio,
+the same rule CI uses.
 
 The build must be Win32 (x86) — the game is a 32-bit process; an x64 DLL will
 not load. `install_plugin.bat` copies the DLL into
@@ -360,7 +379,6 @@ file appearance, and clean quit.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `no game directory resolved` | nothing configured and the search found nothing | Ask the user for the path; verify and persist it (see "Resolve the game directory first") |
-|---|---|---|
 | No RCON banner within ~120 s | Plugin not loaded: missing DLL, x64 build, or not listed in `plugins.lst` | Check stdout for `halflife-cli ... loaded`; rebuild Win32; re-run `install_plugin.bat` |
 | Game dies during startup with no visible reason | A fatal error (engine, MetaHook or another plugin) | Read `[halflife-cli] sys_error: ...` on stdout and `<mod>\metahook\configs\halflifecli\errors.log`: the plugin hooks the engine's `Sys_Error` (MetaHook reports its own load failures through it) and mirrors the message before the process goes down |
 | `RCON failed to start (bind failed ...)` | Port conflict | Set a fixed `[rcon] port` in the ini, or kill the process holding it |
