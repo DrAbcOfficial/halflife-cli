@@ -909,10 +909,17 @@ class TestToolsOverMemory(unittest.TestCase):
 
 class TestStdioSmoke(unittest.TestCase):
     def test_tool_listing(self):
+        import shutil
+        import sys
         from mcp import Client
         from mcp.client.stdio import StdioServerParameters
         script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "halflife_mcp.py")
-        params = StdioServerParameters(command="uv", args=["run", "--script", script])
+        if shutil.which("uv"):
+            params = StdioServerParameters(command="uv", args=["run", "--script", script])
+        else:
+            # No uv on PATH (e.g. the CI runner): the script also runs with a
+            # plain interpreter that has its dependencies installed.
+            params = StdioServerParameters(command=sys.executable, args=[script])
 
         async def main():
             async with Client(params) as client:
