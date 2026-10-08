@@ -1,8 +1,7 @@
 # Half-Life (mod dir: valve) UserMsg wire formats.
 #
-# Transcribed from .zcode/networkmessages/hl-10210/usermessages.md
-# (hl-10210 client.so, reverse engineered; every field order verified by
-# decompilation). Numeric message ids are assigned per server via
+# Transcribed from reverse-engineered hl-10210 client.so sources; every
+# field order verified by decompilation. Numeric message ids are assigned per server via
 # svc_newusermsg, so everything here is name-driven.
 #
 # Schema syntax:

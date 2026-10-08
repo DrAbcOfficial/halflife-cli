@@ -10,6 +10,10 @@ Other engines retain the independent Source TCP backend.
 
 ### Trigger the bunker nuke with DeepSeek
 
+An example of the end state: the game is driven end to end by an agent over
+RCON while in-engine screenshots verify each step — here triggering the Sven
+Co-op bunker nuke sequence.
+
 
 https://github.com/user-attachments/assets/f2f113e6-9ad6-45f7-940a-90005684d6b7
 
@@ -17,13 +21,17 @@ https://github.com/user-attachments/assets/f2f113e6-9ad6-45f7-940a-90005684d6b7
 
 ## Build
 
-Requirements: Visual Studio 2019+ with C++ x86/x64 toolset, CMake 3.21+, Python 3.11+, git.
+Requirements: Visual Studio 2019+ with the C++ x86/x64 toolset, CMake 3.21+,
+Python 3.8+ (3.11+ for the MCP tooling), git.
 
 ```bat
 git submodule update --init --depth 1
-cmake -S . -B build -G "Visual Studio 18 2026" -A Win32
+cmake -S . -B build -A Win32
 cmake --build build --config Release
 ```
+
+No generator is specified: CMake picks the newest installed Visual Studio
+(the same rule CI uses), so the command works across VS versions.
 
 Only tomlplusplus is a submodule. CMake fetches pinned
 [MetaHook](https://github.com/MetaHookSv/MetaHook) and
@@ -253,11 +261,15 @@ The first `uv run` downloads the dependencies, which can take a minute.
   `cli.rconinfo`, `cli.window <0|1|2>` (0=show, 1=off-screen default,
   2=SW_HIDE; note SW_HIDE may pause rendering on some engines),
   `cli.inputlock [on|off]` (lock the mouse cursor so it stops driving the
-  view; no argument reports the state), `cli.blockinput [on|off]` (make the
+  view; no argument reports the state), `cli.focuslock [on|off]` (keep the
+  game internally active while unfocused/hidden; no argument reports the
+  state), `cli.blockinput [on|off]` (make the
   game ignore the physical keyboard and mouse buttons; no argument reports
   the hook state and blocked-event counters), `cli.trapkey <key> <0|1>` and
   `cli.trapmouse <buttons> <0|1>` (inject a key / mouse-button event through
-  the engine's own input path; they pass `block_input`), and
+  the engine's own input path; they pass `block_input`),
+  `cli.mousemove absolute <x> <y>` / `relative <dx> <dy>` (move the UI cursor
+  in original screenshot pixels; see below), and
   `cli.find <name>` to check whether a cvar/command exists — when it does
   not, up to 10 similar names (substring match or small edit distance) are
   suggested, e.g. `cli.find abc` → `similar names: ab, ac, bc, c`.
@@ -350,7 +362,9 @@ mapping are rejected. Mouse masks describe all held buttons, and are
 translated into individual transitions. `MOUSE1`–`MOUSE5` use the same path
 as `cli.trapmouse`, so client focus restrictions also apply to these keys.
 Wheel press generates one pulse; release does nothing. sdl2-compat needs the
-integer wheel conversion fix from `sdl2-compat-fork` commit `c24acad` (or a
+integer wheel conversion fix from
+[hzqst/sdl2-compat-fork](https://github.com/hzqst/sdl2-compat-fork) commit
+[`c24acad`](https://github.com/hzqst/sdl2-compat-fork/commit/c24acad) (or a
 version containing it). Unpatched builds such as 2.32.57 lose the integer
 delta on a push/read roundtrip despite preserving the precise delta.
 
@@ -409,9 +423,7 @@ fields = [
 Types: `byte char short word long float coord angle angle16 string vec3
 group`; `count` is a number, the name of a previously-read field, or `*`
 (until the buffer runs out); `when` makes a field (or group) conditional.
-`raw = true` dumps the payload as hex instead of parsing. The definitions are
-transcribed from the reverse-engineering notes in `.zcode/networkmessages/`
-(gitignored).
+`raw = true` dumps the payload as hex instead of parsing. The definitions are transcribed from reverse-engineering notes.
 
 `python mcp/usermsg_test.py [--connect HOST:PORT]` runs the acceptance flow:
 launches the game, checks the hook report, and captures `[usermsg]` traffic
@@ -441,8 +453,11 @@ allowed_ips = ""            # comma-separated IPv4 allowlist; empty = no additio
 
 [cli]
 hide_window = 1             # 0=off 1=off-screen (default) 2=SW_HIDE
+capture = true              # capture console output via VGUI2Extension GameConsole callbacks
+console = true              # CLI console bridge: stdin commands + stdout mirror
 block_input = true          # true = the game ignores the physical keyboard/mouse buttons (cli.blockinput toggles at runtime; cli.trapkey/cli.trapmouse still inject)
 input_lock = true           # true = lock the mouse so it stops driving the view (cli.inputlock toggles at runtime)
+focus_lock = true           # keep the game internally active while unfocused/hidden (cli.focuslock toggles at runtime)
 developer = 1               # set the developer cvar at startup
 console_topmost = false     # keep the CLI console window always on top
 rcon = true                 # false leaves native engine networking/authentication untouched
@@ -456,15 +471,21 @@ display_channels = "all"    # channels echoed to the console while recorded (com
 
 ## CI
 
-Both workflows build the plugin on `windows-latest` (Win32) and package a 7z
-that mirrors the game directory, using the same `cmake --install` layout the
-`DeployGame` target uses:
+All CI shares one reusable build, [`.github/workflows/build.yml`](.github/workflows/build.yml):
+configure on `windows-latest` (Win32), build, install, run the C++ CTest suite
+(and compile the `EngineInputTest` harness), run the Python unit tests in
+`mcp/tests` (cases needing an installed game skip themselves on the runner),
+validate the shipped TOML key types, and package a 7z that mirrors the game
+directory, using the same `cmake --install` layout the `DeployGame` target
+uses.
 
 - [`.github/workflows/livebuild.yml`](.github/workflows/livebuild.yml) — every
-  push to `main`/`dev` and every PR; uploads `HalflifeCLI-windows-x86.7z` as a
-  workflow artifact.
+  push to `main`/`dev`, every PR against them, and manual dispatch; uploads
+  the 7z as a workflow artifact named `HalflifeCLI-windows-x86`. Superseded
+  runs of the same branch or PR are cancelled.
 - [`.github/workflows/msbuild.yml`](.github/workflows/msbuild.yml) — `v*` tags;
-  publishes a GitHub Release with the same 7z.
+  publishes a GitHub Release with generated release notes, the same 7z, and a
+  SHA-256 checksum file.
 
 The archive contains the plugin DLL, its PDB, the `halflifecli.toml` config
 template, the usermsg schemas and the required gamedata
@@ -480,3 +501,7 @@ The gamedata catalog covers every engine version in the manifest (about 11 KB
 per pruned snapshot): Native UDP RCON and the focus lock resolve their
 `hw.dll` symbols from it. An engine build outside it loads the plugin and uses
 the independent Source TCP RCON backend (see `src/rcon/rcon_server.cpp`).
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE).

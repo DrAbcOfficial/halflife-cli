@@ -1,8 +1,7 @@
 # Counter-Strike 1.x (mod dir: cstrike) UserMsg wire formats.
 #
-# Transcribed from .zcode/networkmessages/cstrike-10210/usermessages.md
-# (cstrike client.so, reverse engineered; every message verified by
-# decompilation).
+# Transcribed from reverse-engineered cstrike client.so sources; every
+# message verified by decompilation.
 #
 # Only messages whose wire format differs from Half-Life, plus CS-specific
 # messages, are defined here; everything else is inherited from valve.toml.

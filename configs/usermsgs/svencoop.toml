@@ -1,8 +1,7 @@
 # Sven Co-op (mod dir: svencoop) UserMsg wire formats, build 10257.
 #
-# Transcribed from .zcode/networkmessages/svencoop-10257/usermessages.md
-# (server.so 87 registrations + client.so 86 hooks, reverse engineered with
-# path-sensitive CFG verification).
+# Transcribed from reverse-engineered svencoop 10257 sources (server.so 87
+# registrations + client.so 86 hooks), with path-sensitive CFG verification.
 #
 # Only messages whose wire format differs from Half-Life, plus Sven-specific
 # messages, are defined here; everything else is inherited from valve.toml.

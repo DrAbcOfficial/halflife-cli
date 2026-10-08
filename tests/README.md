@@ -1,5 +1,10 @@
 # Native input regression test
 
+CMake builds the harness as the `EngineInputTest` target whenever tests are
+enabled (`cmake --build build --config Release --target EngineInputTest`);
+CI compiles it on every run. The manual recipe below is the equivalent
+without CMake.
+
 From an **x86 Native Tools Command Prompt for Visual Studio**, at the repo
 root (with `build/` already configured). Set `METAHOOK_SOURCE_PATH` to the
 resolved path printed by CMake; for the default FetchContent build:
@@ -40,7 +45,9 @@ on separate command/frame boundaries to expose this regression. Reference:
 `vgui2/src/vgui.cpp` (`GetCursorPos` then `UpdateMouseFocus`) and
 `vgui2/src/InputWin32.cpp` in the engine reference source.
 
-Native SDL2 2.32.10 and sdl2-compat-fork with fix `c24acad` pass. The wheel
+Native SDL2 2.32.10 and [sdl2-compat-fork](https://github.com/hzqst/sdl2-compat-fork)
+with fix [`c24acad`](https://github.com/hzqst/sdl2-compat-fork/commit/c24acad)
+pass. The wheel
 checks cover up/down pulses, release without duplication, injection bypass,
 and the prior filter receiving the correct integer delta and rejecting input.
 Unpatched sdl2-compat 2.32.57 fails: integer `y` is lost while `preciseY`
