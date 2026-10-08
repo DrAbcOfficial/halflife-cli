@@ -908,6 +908,39 @@ class TestToolsOverMemory(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestStdioSmoke(unittest.TestCase):
+    def test_vgui2_tools_return_structure_and_errors(self):
+        from mcp import Client
+        from halflifecli.vgui2 import VGUI2Client
+        from test_vgui2 import FakeManager
+        mgr = FakeManager([
+            {"nodes": [], "next_cursor": None},
+            {"ref": "p", "semantic_support": False},
+            {"status": "success", "ref": "p"},
+            {"status": "success", "focused_ref": "p"},
+            {"error": "VGUI2 set_text is unsupported"},
+        ])
+
+        async def main():
+            async with Client(halflife_mcp.mcp) as client:
+                tree = await client.call_tool("vgui2_tree", {})
+                self.assertFalse(tree.is_error)
+                self.assertEqual([], tree.structured_content["nodes"])
+                inspected = await client.call_tool("vgui2_inspect", {"ref": "p", "text_offset": 4})
+                self.assertFalse(inspected.structured_content["semantic_support"])
+                for tool in ("vgui2_click", "vgui2_focus"):
+                    result = await client.call_tool(tool, {"ref": "p"})
+                    self.assertFalse(result.is_error)
+                    self.assertEqual("success", result.structured_content["status"])
+                unsupported = await client.call_tool("vgui2_set_text", {"ref": "p", "text": "hello"})
+                self.assertTrue(unsupported.is_error)
+                self.assertIn("unsupported", unsupported.content[0].text)
+                bad = await client.call_tool("vgui2_click", {"ref": "p", "x": 4})
+                self.assertTrue(bad.is_error)
+
+        with patch.object(halflife_mcp, "vgui2_client", VGUI2Client(mgr)), patch.object(halflife_mcp.manager, "shutdown"):
+            anyio.run(main)
+        self.assertEqual(["tree", "inspect", "click", "focus", "set_text"], [c[0] for c in mgr.calls])
+
     def test_tool_listing(self):
         import shutil
         import sys
@@ -929,7 +962,8 @@ class TestStdioSmoke(unittest.TestCase):
                             "find_cvar", "send_key", "send_mouse", "move_mouse",
                             "read_console", "snapshot", "quit_game",
                             "usermsg_status", "usermsg_messages", "usermsg_events",
-                            "usermsg_set_display", "usermsg_reload_schema"}
+                            "usermsg_set_display", "usermsg_reload_schema",
+                            "vgui2_tree", "vgui2_inspect", "vgui2_click", "vgui2_focus", "vgui2_set_text"}
                 self.assertEqual(names, expected)
 
         anyio.run(main)

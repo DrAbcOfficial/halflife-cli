@@ -19,6 +19,7 @@ defaults. The implementation lives in the halflifecli package
 """
 
 import contextlib
+import json
 import logging
 import os
 import sys
@@ -28,7 +29,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Image
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
+from mcp.server.mcpserver.exceptions import ToolError
+from halflifecli.vgui2 import VGUI2Client
 from pydantic import Field
 
 from game_process import BANNER_TIMEOUT_S, QUIT_TIMEOUT_S
@@ -71,6 +74,9 @@ INSTRUCTIONS = (
     "done. Use run_command for everything else; its output is capped at "
     "max_lines (default 200) and the full text of a capped command is saved to "
     "the file path it returns, so grep that file instead of raising the cap. "
+    "Inspect VGUI2 structure with vgui2_tree / vgui2_inspect; follow next_cursor. "
+    "Use returned references with vgui2_click / vgui2_focus. Semantic text/state "
+    "and vgui2_set_text are currently unsupported; VGUI1 is excluded. "
     "To press keys or mouse buttons in the game use send_key / send_mouse. "
     "For UI pointing use move_mouse, or send_mouse with x/y, measured in "
     "snapshot's original_size pixels (returned_size describes the scaled image); "
@@ -86,6 +92,7 @@ INSTRUCTIONS = (
 )
 
 manager = Manager()
+vgui2_client = VGUI2Client(manager)
 
 
 @contextlib.asynccontextmanager
@@ -100,6 +107,81 @@ async def lifespan(_server):
 
 
 mcp = MCPServer("halflife", instructions=INSTRUCTIONS, lifespan=lifespan)
+
+
+def _vgui2_call(method, *args, **kwargs):
+    try:
+        return method(*args, **kwargs)
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+
+
+def _vgui2_result(value):
+    return CallToolResult(content=[TextContent(type="text", text=json.dumps(value, ensure_ascii=False, indent=2))],
+                          structured_content=value)
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
+def vgui2_tree(
+    root: str | None = None,
+    include_hidden: bool = False,
+    max_depth: Annotated[int | None, Field(ge=0, le=20000)] = None,
+    cursor: str | None = None,
+) -> CallToolResult:
+    """Read VGUI2 structure, names and geometry. Default: visible nodes, embedded root.
+
+    Follow next_cursor for the same frozen snapshot. References expire on destruction/restart.
+    Bounds use original screenshot pixels; visible does not mean unobstructed. VGUI1 and
+    semantic text/state are unsupported (semantic_support=false).
+    """
+    result = _vgui2_call(vgui2_client.tree, root, include_hidden, max_depth, cursor)
+    text = result.pop("text_tree")
+    return CallToolResult(content=[TextContent(type="text", text=text)], structured_content=result)
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
+def vgui2_inspect(ref: str, text_offset: Annotated[int, Field(ge=0)] = 0) -> CallToolResult:
+    """Read current VGUI2 geometry, visibility and input flags. Semantic text/state is
+    unsupported; text_offset is retained for compatibility and returns no text.
+    """
+    return _vgui2_result(_vgui2_call(vgui2_client.inspect, ref, text_offset))
+
+
+@mcp.tool()
+def vgui2_click(
+    ref: str,
+    button: Literal["left", "right"] = "left",
+    click_count: Literal[1, 2] = 1,
+    x: Annotated[int | None, Field(ge=0)] = None,
+    y: Annotated[int | None, Field(ge=0)] = None,
+) -> CallToolResult:
+    """Click a VGUI2 reference via native input, respecting hit testing and modals.
+
+    Optional paired x/y are offsets from bounds in original screenshot pixels.
+    Default: clipped center. Success means input completed, not subsequent business work.
+    Never automatically repeat an action after a transport timeout.
+    """
+    if (x is None) != (y is None):
+        raise ToolError("x and y must be provided together")
+    args = dict(ref=ref, button=button, click_count=click_count)
+    if x is not None:
+        args.update(x=x, y=y)
+    return _vgui2_result(_vgui2_call(vgui2_client.action, "click", **args))
+
+
+@mcp.tool()
+def vgui2_focus(ref: str) -> CallToolResult:
+    """Request and verify keyboard focus on a VGUI2 control or its child."""
+    return _vgui2_result(_vgui2_call(vgui2_client.action, "focus", ref=ref))
+
+
+@mcp.tool()
+def vgui2_set_text(ref: str, text: str) -> CallToolResult:
+    """Compatibility placeholder: returns unsupported until RequestInfo automation is available.
+
+    Does not type, upload or modify text in this plugin version.
+    """
+    return _vgui2_result(_vgui2_call(vgui2_client.set_text, ref, text))
 
 
 @mcp.tool()

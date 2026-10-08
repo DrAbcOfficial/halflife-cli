@@ -776,6 +776,25 @@ namespace EngineInput
 		return true;
 	}
 
+	bool GetMouseGeometry(InputState::MouseGeometry& geometry)
+	{
+		if (!SyncMouseGeometry()) return false;
+		geometry = g_mouse.Geometry();
+		return true;
+	}
+
+	bool GetVirtualMousePosition(int& x, int& y)
+	{
+		if (!EngineHooksInstalled() || !VirtualMouseReady() || !SyncMouseGeometry() || !g_mouse.HasVirtualPosition())
+			return false;
+		auto point = g_mouse.WindowPosition();
+		x = point.x;
+		y = point.y;
+		return true;
+	}
+
+	int GetHeldMouseButtons() { return g_mouseButtons; }
+
 	bool WarpVirtualMouse(int x, int y)
 	{
 		if (!g_sdlFilterInstalled)
