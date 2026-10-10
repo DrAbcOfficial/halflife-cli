@@ -22,9 +22,13 @@ endfunction()
 
 function(halflife_cli_fetch_source name url commit out_var)
     include(FetchContent)
+    set(submodules "")
+    if(name STREQUAL "halflife_cli_metahook")
+        set(submodules thirdparty/rapidjson)
+    endif()
     FetchContent_Declare(${name}
         GIT_REPOSITORY "${url}" GIT_TAG "${commit}"
-        GIT_SUBMODULES "" GIT_SUBMODULES_RECURSE FALSE
+        GIT_SUBMODULES "${submodules}" GIT_SUBMODULES_RECURSE FALSE
         # Fetch headers and sources without configuring the dependency project.
         SOURCE_SUBDIR _halflife_cli_source_only)
     FetchContent_MakeAvailable(${name})
@@ -32,7 +36,8 @@ function(halflife_cli_fetch_source name url commit out_var)
 endfunction()
 
 function(halflife_cli_prepare_dependencies)
-    set(METAHOOK_files include/metahook.h include/HLSDK/common/interface.cpp)
+    set(METAHOOK_files include/metahook.h include/HLSDK/common/interface.cpp
+        thirdparty/rapidjson/include/rapidjson/document.h)
     set(VGUI2EXTENSION_files include/Interface/IVGUI2Extension.h)
 
     # Validate every explicit path before starting any downloads.

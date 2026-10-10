@@ -11,6 +11,7 @@
 #include "usermsg/usermsg_monitor.h"
 #include "util/text.h"
 #include "window/window_manager.h"
+#include "vgui2/vgui2.h"
 
 #include <metahook.h>
 #include <cvardef.h>
@@ -49,6 +50,7 @@ namespace
 		Reply("  cli.mousemove [absolute|relative <x> <y>] - move/query the UI cursor in original screenshot pixels");
 		Reply("  cli.find <name>     - check cvar/command existence, suggests similar names");
 		Reply("  cli.usermsg         - UserMsg monitor: on|off|reload|list|pending|<name>");
+		Reply("  cli.vgui2           - VGUI2 tree|inspect|click|focus|result (set_text unsupported)");
 		Reply("  cli.help            - this help");
 		Reply("any other line is executed as a game console command (e.g. 'status', 'snapshot')");
 	}
@@ -394,4 +396,5 @@ void CliCommands::RegisterAll()
 	gEngfuncs.pfnAddCommand("cli.mousemove", Cmd_CliMouseMove);
 	gEngfuncs.pfnAddCommand("cli.find", Cmd_CliFind);
 	gEngfuncs.pfnAddCommand("cli.usermsg", Cmd_CliUserMsg);
+	gEngfuncs.pfnAddCommand("cli.vgui2", VGUI2::Command);
 }

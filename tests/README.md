@@ -5,6 +5,14 @@ enabled (`cmake --build build --config Release --target EngineInputTest`);
 CI compiles it on every run. The manual recipe below is the equivalent
 without CMake.
 
+VGUI2 regression: build `VGUI2Test`, then run `ctest --test-dir build -C Release
+--output-on-failure`. Its fake backend exercises the real automation state
+machine: paging budgets, stale references, modal/visibility restrictions,
+focus, destruction during a click, release failure and timeout. Python wire
+tests run with `python -m unittest discover -s mcp/tests -p test_vgui2.py`;
+`uv run --script mcp/tests/test_halflife_mcp.py` also checks all five MCP tools.
+These tests do not replace game-level interface ABI and screenshot checks.
+
 From an **x86 Native Tools Command Prompt for Visual Studio**, at the repo
 root (with `build/` already configured). Set `METAHOOK_SOURCE_PATH` to the
 resolved path printed by CMake; for the default FetchContent build:

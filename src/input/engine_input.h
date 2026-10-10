@@ -1,5 +1,7 @@
 #pragma once
 
+namespace InputState { struct MouseGeometry; }
+
 // Native input before CGame dispatches to gameplay and VGUI:
 // SDL2 uses SDL_SetEventFilter / SDL_PushEvent; legacy engines use an inline
 // CGame::WindowProc hook / its original trampoline. On SDL2 the engine's
@@ -38,6 +40,9 @@ namespace EngineInput
 	// not the FPS view.
 	bool MoveMouse(int x, int y, bool relative);
 	bool GetMousePosition(int& x, int& y);   // current cursor in screenshot pixels
+	bool GetMouseGeometry(InputState::MouseGeometry& geometry);
+	bool GetVirtualMousePosition(int& x, int& y); // window/VGUI coordinates
+	int GetHeldMouseButtons();
 	// An engine warp in window coordinates: true when the virtual cursor took
 	// it, so the desktop cursor must not move.
 	bool WarpVirtualMouse(int x, int y);

@@ -11,6 +11,7 @@
 #include "rcon/rcon_server.h"
 #include "usermsg/usermsg_monitor.h"
 #include "window/window_manager.h"
+#include "vgui2/vgui2.h"
 
 #include <metahook.h>
 
@@ -30,6 +31,7 @@ void IPluginsV4::Init(metahook_api_t *pAPI, mh_interface_t *pInterface, mh_engin
 
 void IPluginsV4::Shutdown(void)
 {
+	VGUI2::Shutdown();
 	RconServer::Shutdown();
 	SysError::Shutdown();
 	ConsoleBridge::Shutdown();
@@ -56,6 +58,7 @@ void IPluginsV4::LoadEngine(cl_enginefunc_t *pEngfuncs)
 
 void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 {
+	VGUI2::Shutdown();
 	memcpy(&gExportfuncs, pExportFunc, sizeof(gExportfuncs));
 
 	pExportFunc->HUD_Init = HUD_Init;
@@ -115,6 +118,7 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 
 void IPluginsV4::ExitGame(int iResult)
 {
+	VGUI2::Shutdown();
 	RconServer::OnEngineShutdown();
 	ConsoleBridge::Shutdown(true);
 	InputLock::Shutdown();
@@ -151,6 +155,7 @@ int HUD_VidInit(void)
 void HUD_Frame(double time)
 {
 	WindowManager::ApplyConfiguredMode();
+	VGUI2::Frame();
 	if (!RconServer::UsesMainFrame())
 	{
 		ConsoleBridge::PumpCommands();

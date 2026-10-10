@@ -114,6 +114,7 @@ namespace RconServer {
     void OnEngineShutdown() {} void Shutdown() {} bool UsesMainFrame() { return false; }
 }
 namespace CliCommands { void RegisterAll() {} }
+namespace VGUI2 { void Frame() {} void Shutdown() {} }
 namespace UserMsgMonitor { void Init() {} void Shutdown() {} void OnHudInit() {} void OnHudVidInit() {} void Frame() {} }
 namespace InputLock { void InstallHooks() {} void SetActive(bool) {} void Shutdown() {} }
 namespace FocusLock { void Install() {} void SetActive(bool) {} void OnExitGame() {} void Shutdown() {} }

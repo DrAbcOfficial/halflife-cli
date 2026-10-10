@@ -37,7 +37,9 @@ Only tomlplusplus is a submodule. CMake fetches pinned
 [MetaHook](https://github.com/MetaHookSv/MetaHook) and
 [VGUI2Extension](https://github.com/MetaHookSv/VGUI2Extension) sources on the
 first configure (network access required), without configuring their projects
-or fetching their submodules. VGUI2Extension supplies interface headers only;
+or fetching unrelated submodules. MetaHook's pinned RapidJSON submodule is
+fetched for VGUI2 protocol JSON; local MetaHook trees must initialize
+`thirdparty/rapidjson` too. VGUI2Extension supplies interface headers only;
 its runtime DLL must still be installed separately.
 
 To use existing source trees instead:
@@ -175,6 +177,63 @@ already (as `install_plugin.bat` does) and never replaces the launcher or
 `plugins.lst`'s existing entries.
 
 ## MCP server
+
+### VGUI2 inspection and control
+
+`vgui2_tree(root=None, include_hidden=False, max_depth=None, cursor=None)`
+returns a readable tree and structured nodes. Follow `next_cursor` to read the
+same frozen snapshot; only the latest four snapshots are retained. Use a
+subtree or depth limit for large interfaces (20,000 nodes / 8 MiB per snapshot).
+`vgui2_inspect(ref, text_offset=0)` returns current geometry and input flags.
+References expire when controls are destroyed/detached or VGUI restarts.
+
+`vgui2_click(ref, button="left", click_count=1, x=None, y=None)` moves through
+native input, checks hover/hit testing and sends press/release on separate
+frames. Optional x/y are paired offsets from the control's `bounds` in
+**original screenshot pixels**, not a downscaled snapshot. The default is the
+clipped center. `vgui2_focus(ref)` requests and verifies keyboard focus.
+Hidden, disabled, obstructed and modal-blocked targets fail explicitly. A
+double click revalidates the target before its second click; opening a dialog
+on the first click can therefore cause the second to fail. Success confirms
+input completion, not the control's subsequent application work.
+
+This version supports VGUI2 structure, names/classes, bounds/clipping,
+visibility, enabled/input flags and focus/hover on SDL, legacy and HL25
+engines, using the existing windowed input coordinate convention. It does
+not read semantic text, list entries, selection or numeric values:
+`semantic_support` is false. `text_offset` is a compatibility parameter.
+`vgui2_set_text(ref, text)` remains registered but returns **unsupported**
+before uploading anything. No RequestInfo/VTF hooks or VGUI1 automation are
+included. No game or third-party control implementations are modified.
+
+Console equivalents:
+
+```text
+cli.vgui2 tree [--all] [--root ref] [--cursor cursor] [--depth n]
+cli.vgui2 inspect <ref> [text_offset]
+cli.vgui2 click <ref> [left|right] [1|2] [x y]
+cli.vgui2 focus <ref>
+cli.vgui2 result <operation>
+cli.vgui2 set_text <ref> <UTF-8-hex>   // unsupported placeholder
+```
+
+Click/focus return `pending` and an operation ID; `result` polls completion.
+Only one operation is pending at a time, with a four-second deadline. Never
+automatically repeat an action after a lost reply: it may already have run.
+MCP handles polling and serializes with the other input tools.
+
+The machine protocol is `cli.vgui2 <operation> --request <32-hex-id> <hex-json>`;
+responses are request-tagged `VGUI2 ... begin/data/end` records with numbered
+hex chunks. MCP rejects missing/duplicate chunks and accepts reordering.
+JSON pages are limited to 12,000 bytes over native UDP and 1,600 bytes over
+Source TCP to fit its 4,096-byte response limit after framing. A node too
+large for one page fails explicitly. Missing/uninitialized VGUI2 interfaces
+return an error while the existing console and input tools remain available.
+
+See [verification evidence](docs/vgui2-verification.md) for tested engines,
+automated checks and remaining runtime coverage limits.
+
+### General tools
 
 `mcp/halflife_mcp.py` is a Model Context Protocol server (stdio transport)
 that turns the game into callable tools for MCP clients. It launches the game

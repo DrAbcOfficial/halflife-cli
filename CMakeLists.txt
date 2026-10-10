@@ -48,6 +48,8 @@ add_library(HalflifeCLI SHARED
 	src/usermsg/usermsg_monitor.cpp
 	src/util/import_hook.cpp
 	src/util/toml_file.cpp
+	src/vgui2/automation.cpp
+	src/vgui2/vgui2.cpp
 	"${METAHOOK_SOURCE_PATH}/include/HLSDK/common/interface.cpp"
 )
 
@@ -58,6 +60,7 @@ target_compile_options(HalflifeCLI PRIVATE $<$<COMPILE_LANGUAGE:ASM_MASM>:/safes
 target_include_directories(HalflifeCLI PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src
 	${TOMLPLUSPLUS_DIR}/include
+	"${METAHOOK_SOURCE_PATH}/thirdparty/rapidjson/include"
 	"${VGUI2EXTENSION_SOURCE_PATH}/include/Interface"
 	"${VGUI2EXTENSION_SOURCE_PATH}/include/Interface/VGUI"
 	"${METAHOOK_SOURCE_PATH}/include"
@@ -134,6 +137,10 @@ install(DIRECTORY "${HALFLIFECLI_GAMEDATA_DIR}/"
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(VGUI2Test tests/vgui2_test.cpp src/vgui2/automation.cpp)
+    target_compile_features(VGUI2Test PRIVATE cxx_std_20)
+    target_include_directories(VGUI2Test PRIVATE src "${METAHOOK_SOURCE_PATH}/thirdparty/rapidjson/include")
+    add_test(NAME VGUI2 COMMAND VGUI2Test)
     add_executable(RconPolicyTest tests/rcon_policy_test.cpp)
     target_compile_features(RconPolicyTest PRIVATE cxx_std_20)
     target_include_directories(RconPolicyTest PRIVATE src "${METAHOOK_SOURCE_PATH}/include/HLSDK/common")
