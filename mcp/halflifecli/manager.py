@@ -19,6 +19,7 @@ from find_game import resolve_target
 from game_process import (
     BANNER_TIMEOUT_S,
     EXIT_CODE_GRACE_S,
+    EXIT_CONFIRM_S,
     IMAGE_EXTENSIONS,
     QUIT_TIMEOUT_S,
     GameExitedError,
@@ -27,6 +28,7 @@ from game_process import (
     build_game_argv,
     rcon_connect_host,
     screenshot_dirs,
+    wait_pid_gone,
 )
 from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
@@ -243,6 +245,13 @@ class Manager:
             if self._proc is not None:
                 if self._proc.alive:
                     return self._status_locked()
+                # A previous managed game that exited must really be gone: it
+                # holds the launcher's single-instance mutex until it is. Never
+                # start a second game on top of a process still winding down.
+                if not wait_pid_gone(self._proc.pid, EXIT_CONFIRM_S):
+                    raise ToolError(
+                        "the previous game (pid %s) is still shutting down; wait a moment "
+                        "and call launch_game again" % self._proc.pid)
                 self._proc = None
             attached = self._probe_attached()
             if attached is not None:
@@ -430,6 +439,15 @@ class Manager:
                 f"returned_size=({width},{height})"]
 
     def quit_game(self, timeout_s):
+        """Stop the current game and wait until its pid has exited.
+
+        The managed path returns only once the process is confirmed gone, so a
+        following launch_game cannot start on top of a game that is still
+        winding down and holding its single-instance lock. Attached games are
+        started outside this server, so nothing here can wait on their pid: the
+        RCON quit is sent and the caller gets an explicit note that exit was not
+        awaited (launch_game still refuses while that game's port answers).
+        """
         timeout_s = min(max(timeout_s or QUIT_TIMEOUT_S, 1), QUIT_TIMEOUT_CAP_S)
         with self._lock:
             proc = self._proc
@@ -442,15 +460,21 @@ class Manager:
                     conn.command("quit")
                 except Exception as e:
                     # an exiting game often drops the connection before replying
-                    return f"quit sent to attached game over RCON (no reply: {e})"
-                return "quit sent to attached game over RCON"
+                    return f"quit sent to attached game over RCON (did not await its exit; no reply: {e})"
+                return "quit sent to attached game over RCON (did not await its exit)"
             try:
                 conn = self._connection_locked()
             except Exception:
                 conn = None
             rcon_quit = (lambda: conn.command("quit")) if conn is not None else None
         result = proc.stop(quit_command=rcon_quit, timeout=timeout_s)
-        return result.summary
+        if result.pid_gone:
+            return result.summary + "; pid confirmed exited"
+        # stop() already waited and killed; the pid is still live, so do not let
+        # the caller start another game: the mutex is still held.
+        raise ToolError(
+            "game pid %s did not exit (last exit code %s); a new launch would fail while "
+            "it holds the single-instance mutex" % (result.pid, result.exit_code))
 
     # -- usermsg tools -------------------------------------------------------
 

@@ -41,6 +41,10 @@ BANNER_TIMEOUT_S = 120
 QUIT_TIMEOUT_S = 30
 KILL_WAIT_S = 5
 EXIT_CODE_GRACE_S = 2
+# After a kill, keep confirming the pid is really gone before reporting the stop:
+# a lingering process keeps the launcher's single-instance mutex and makes the
+# next launch fail with "Only one instance of this game can be run at a time".
+EXIT_CONFIRM_S = 15
 CONSOLE_BUFFER_LINES = 5000
 
 
@@ -64,6 +68,8 @@ class StopResult:
     steps: list
     exit_code: object  # int, or None if the process could not be reaped
     killed: bool
+    pid: object = None          # the pid this stop applies to, when known
+    pid_gone: bool = True       # False when the pid is still live after the stop
 
     @property
     def summary(self):
@@ -143,6 +149,54 @@ def screenshot_dirs(target):
 # config (svencoop's `screenshot` writes .tga; `snapshot` is taken over by
 # SteamScreenshots.dll and uploads to Steam instead of writing a file).
 IMAGE_EXTENSIONS = (".bmp", ".tga", ".png", ".jpg", ".jpeg")
+
+
+def process_liveness(pid):
+    """'live', 'exited' or 'absent' for a Windows pid.
+
+    'absent' also covers the non-Windows / missing-pywin32 case and any pid the
+    OS will not open, both of which mean "not a live process". 'exited' is a
+    process whose object is still referenced (a handle is open somewhere) but
+    which has already terminated; its launcher mutex is released, so callers
+    treat it as gone.
+    """
+    try:
+        import win32api
+        import win32con
+        import win32event
+    except ImportError:
+        return 'absent'
+    try:
+        handle = win32api.OpenProcess(win32con.SYNCHRONIZE, False, pid)
+    except Exception:
+        return 'absent'
+    try:
+        if win32event.WaitForSingleObject(handle, 0) == win32con.WAIT_TIMEOUT:
+            return 'live'
+        return 'exited'
+    finally:
+        win32api.CloseHandle(handle)
+
+
+def wait_pid_gone(pid, timeout, poll_s=0.05):
+    """Wait until `pid` is no longer a live process; False if still live on timeout.
+
+    The kill path needs this: `TerminateProcess` is asynchronous, so a stop that
+    reports success too early leaves the previous game holding the launcher's
+    single-instance mutex, and the next launch fails with "Only one instance of
+    this game can be run at a time". Uses process liveness rather than
+    `can_terminate`/`OpenProcess`, because Windows keeps a process object alive
+    while any handle (including one held by an unrelated process) stays open.
+    """
+    if pid is None:
+        return True
+    deadline = time.monotonic() + timeout
+    while True:
+        if process_liveness(pid) != 'live':
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll_s)
 
 
 def rcon_connect_host(bind):
@@ -351,9 +405,16 @@ class GameProcess:
             pass  # already gone
 
     def stop(self, quit_command=None, timeout=QUIT_TIMEOUT_S):
-        """Quit cleanly: `quit_command` (e.g. RCON quit), else stdin, kill last."""
+        """Quit cleanly: `quit_command` (e.g. RCON quit), else stdin, kill last.
+
+        Returns only once the process is gone: the reported `exit_code` and
+        `pid_gone` are the caller's signal that the previous game (and the
+        launcher's single-instance mutex it holds) has been released.
+        """
+        pid = self.pid
         if not self.alive:
-            return StopResult(steps=["game already exited"], exit_code=self.returncode, killed=False)
+            return StopResult(steps=["game already exited"], exit_code=self.returncode,
+                              killed=False, pid=pid, pid_gone=True)
         steps = []
         replied = False
         if quit_command is not None:
@@ -375,4 +436,10 @@ class GameProcess:
             steps.append("no exit within %ss, killed" % timeout)
             self.kill()
             code = self.wait(KILL_WAIT_S)
-        return StopResult(steps=steps, exit_code=code, killed=killed)
+        # TerminateProcess is asynchronous: confirm the pid is gone before
+        # reporting success, so the launcher mutex is free for the next launch.
+        pid_gone = wait_pid_gone(pid, EXIT_CONFIRM_S)
+        if not pid_gone:
+            steps.append("pid %s still running after kill" % pid)
+        return StopResult(steps=steps, exit_code=code, killed=killed,
+                          pid=pid, pid_gone=pid_gone)

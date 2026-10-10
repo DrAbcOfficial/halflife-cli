@@ -20,6 +20,7 @@ import struct
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -363,6 +364,71 @@ class TestTruncateOutput(unittest.TestCase):
                 lines = truncate_output("a\nb\nc", 1, "head", "cmd").split("\n")
         self.assertEqual("a", lines[0])
         self.assertIn("2 of 3 lines omitted; full output not saved: ", lines[1])
+
+
+class TestProcessLiveness(unittest.TestCase):
+    """Issue #62: a stop must not report success while the pid is still live."""
+
+    def setUp(self):
+        self._patch = patch.object(game_process, "process_liveness")
+        self.liveness = self._patch.start()
+        self.addCleanup(self._patch.stop)
+
+    def test_wait_pid_gone_true_when_exited_or_absent(self):
+        for state in ("exited", "absent"):
+            self.liveness.return_value = state
+            self.assertTrue(game_process.wait_pid_gone(4242, timeout=1))
+
+    def test_wait_pid_gone_times_out_while_live(self):
+        self.liveness.return_value = "live"
+        start = time.monotonic()
+        self.assertFalse(game_process.wait_pid_gone(4242, timeout=0.2, poll_s=0.01))
+        self.assertGreaterEqual(time.monotonic() - start, 0.15)
+
+    def test_wait_pid_gone_settles_when_process_eventually_exits(self):
+        self.liveness.side_effect = ["live", "live", "exited"]
+        self.assertTrue(game_process.wait_pid_gone(4242, timeout=1, poll_s=0.001))
+
+    def test_kill_path_confirms_pid_gone(self):
+        # first wait() times out (kill needed), second returns the exit code
+        proc = _stopping_game(self.liveness, waits=[None, 0])
+        result = proc.stop(timeout=1)
+        self.assertTrue(result.killed)
+        self.assertTrue(result.pid_gone)
+        self.assertEqual(4321, result.pid)
+        self.assertNotIn("still running", result.summary)
+
+    def test_stop_reports_when_pid_survives_the_kill(self):
+        proc = _stopping_game(self.liveness, waits=[None, None], state="live")
+        result = proc.stop(timeout=1)
+        self.assertFalse(result.pid_gone)
+        self.assertIn("pid 4321 still running after kill", result.summary)
+
+
+def _stopping_game(liveness, waits, state="absent"):
+    """GameProcess whose wait() yields `waits` in order and whose kill is a no-op."""
+    proc = GameProcess(["dummy"], cwd=".")
+    proc._proc = _FakePopen(pid=4321)
+    proc.send_stdin = lambda line: False     # stdin already closed
+    proc.kill = lambda: None
+    pending = iter(waits)
+    proc.wait = lambda timeout=None: next(pending)
+    liveness.return_value = state
+    return proc
+
+
+class _FakePopen:
+    """Minimal Popen stand-in for stop(): a pid plus a controllable poll()."""
+
+    def __init__(self, pid, returncode=None):
+        self.pid = pid
+        self._returncode = returncode
+
+    def poll(self):
+        return self._returncode
+
+    def kill(self):
+        self._returncode = -9
 
 
 # ---------------------------------------------------------------------------
@@ -901,6 +967,64 @@ class TestToolsOverMemory(unittest.TestCase):
             anyio.run(main)
         finally:
             fake_srv.close()
+
+
+class TestQuitWaitsForExit(unittest.TestCase):
+    """Issue #62: quit_game must not return while the pid is still live."""
+
+    def _manager(self):
+        mgr = Manager()
+        _attach_fake(mgr, _ExitedGame(pid=4321, alive=True))
+        return mgr
+
+    def test_quit_reports_confirmed_exit(self):
+        mgr = self._manager()
+        stopped = game_process.StopResult(steps=["quit sent via RCON"], exit_code=0,
+                                          killed=False, pid=4321, pid_gone=True)
+        with patch.object(mgr._proc, "stop", return_value=stopped, create=True):
+            self.assertEqual("quit sent via RCON; exit code 0; pid confirmed exited",
+                             mgr.quit_game(30))
+
+    def test_quit_raises_when_the_pid_survives(self):
+        mgr = self._manager()
+        stopped = game_process.StopResult(steps=["no exit within 30s, killed"], exit_code=None,
+                                          killed=True, pid=4321, pid_gone=False)
+        with patch.object(mgr._proc, "stop", return_value=stopped, create=True):
+            with self.assertRaises(ToolError):
+                mgr.quit_game(30)
+
+    def test_launch_refuses_while_the_previous_pid_is_live(self):
+        mgr = self._manager()
+        mgr._proc = _ExitedGame(pid=4321)   # process object signalled, pid still live
+        with patch.object(manager_module, "wait_pid_gone", return_value=False), \
+             patch.object(mgr, "_probe_attached", return_value=None):
+            with self.assertRaises(ToolError) as ctx:
+                mgr.launch_game([], None, 1)
+        self.assertIn("still shutting down", str(ctx.exception))
+
+    def test_launch_reaps_the_dead_process_once_gone(self):
+        mgr = self._manager()
+        mgr._proc = _ExitedGame(pid=4321)
+        # resolve_target fails on this machine-independent stub so the test
+        # never launches a real game when one happens to be installed.
+        with patch.object(manager_module, "wait_pid_gone", return_value=True), \
+             patch.object(mgr, "_probe_attached", return_value=None), \
+             patch.object(manager_module, "resolve_target", return_value=(None, "test: no install")):
+            with self.assertRaises(ToolError) as ctx:
+                mgr.launch_game([], None, 1)
+        # Reaching resolution (not the "still shutting down" guard) proves the
+        # dead process was cleared; the failure is only the missing install.
+        self.assertNotIn("still shutting down", str(ctx.exception))
+        self.assertIn("no game directory resolved", str(ctx.exception))
+
+
+class _ExitedGame(FakeGame):
+    """A managed game with a chosen pid and liveness, for stop/launch tests."""
+
+    def __init__(self, pid, alive=False):
+        super().__init__("127.0.0.1", 1)
+        self.pid = pid
+        self.alive = alive
 
 
 # ---------------------------------------------------------------------------

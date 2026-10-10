@@ -196,7 +196,10 @@ def snapshot(
 def quit_game(
     timeout_s: Annotated[int, Field(description="Seconds to wait for a clean exit before killing", ge=1, le=QUIT_TIMEOUT_CAP_S)] = QUIT_TIMEOUT_S,
 ) -> str:
-    """Quit the game cleanly (RCON, then stdin, then kill as a last resort)."""
+    """Quit the game cleanly (RCON, then stdin, then kill as a last resort).
+
+    Returns only after the game process has exited, so a following launch_game
+    cannot collide with the previous game's single-instance lock."""
     return manager.quit_game(timeout_s)
 
 
