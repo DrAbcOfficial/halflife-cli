@@ -114,15 +114,6 @@ namespace
 
 namespace OutputCapture
 {
-	void Flush()
-	{
-		std::lock_guard<std::mutex> lock(g_cap.mutex);
-		if (g_cap.partial.empty())
-			return;
-		EmitLine(std::move(g_cap.partial));
-		g_cap.partial.clear();
-	}
-
 	bool Install()
 	{
 		// LoadClient re-runs on every map change; register only once.

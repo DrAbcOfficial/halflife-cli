@@ -72,13 +72,14 @@ console.
 
 ```python
 proc = subprocess.Popen(
-    [os.path.join(game_dir, "svencoop.exe"), "-windowed", "-novid"],
+    [os.path.join(game_dir, "svencoop.exe"), "-windowed", "-novid", "-redirect_fatalerror_to_log"],
     cwd=game_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 ```
 
-`-windowed` is mandatory (off-screen hiding requires windowed mode) and
-`-novid` skips the intro. The plugin enforces nothing on your behalf here —
-always pass both.
+`-windowed` is mandatory (off-screen hiding requires windowed mode), `-novid`
+skips the intro, and `-redirect_fatalerror_to_log` makes MetaHookSv write a
+`fatalerror-<datetime>-<pid>.log` beside the launcher instead of showing a
+dialog, so a crash stays diagnosable. Always pass all three.
 
 For any app other than Sven Co-op, let the resolved target build the command
 line instead of hardcoding the executable: `build_game_argv` starts the
@@ -193,15 +194,13 @@ specific command; use stdin for one-way pushes.
 plugin sets `developer 1` by default so it does). Capture rides the
 VGUI2Extension plugin's GameConsole interface callbacks — `VGUI2Extension.dll`
 must be installed and listed in `plugins.lst` (the installer ensures both).
-This is your main observability channel. It also carries
-`[halflife-cli] sys_error: ...`: the engine's `Sys_Error` (the path MetaHook
-reports its own load failures through) is hooked, so a fatal error's text is on
-stdout — and appended to `<mod>\metahook\configs\halflifecli\errors.log` — even
-though the game is about to die. The plugin wires existing stdout and registers
-the fatal hook in `LoadEngine`; MetaHook activates it after all `LoadEngine`
-callbacks return. Errors before that commit are out of reach. Config, console
-allocation, stdin and ordinary VGUI capture wait for `LoadClient`; `console=false`
-then disables stdout mirroring, while fatal file logging remains enabled.
+This is your main observability channel. Fatal errors do not appear here: the
+plugin does not hook `Sys_Error`. Games are launched with MetaHookSv's
+`-redirect_fatalerror_to_log`, which writes the error to a
+`fatalerror-<datetime>-<pid>.log` beside the launcher (see "Debugging"). The
+plugin wires existing stdout in `LoadEngine`; config, console allocation, stdin
+and ordinary VGUI capture wait for `LoadClient`, and `console=false` then
+disables stdout mirroring.
 
 **Plugin commands** (alongside all normal game commands):
 `cli.help`, `cli.rconinfo` (current RCON endpoint), `cli.window <0|1|2>`
@@ -380,7 +379,7 @@ file appearance, and clean quit.
 |---|---|---|
 | `no game directory resolved` | nothing configured and the search found nothing | Ask the user for the path; verify and persist it (see "Resolve the game directory first") |
 | No RCON banner within ~120 s | Plugin not loaded: missing DLL, x64 build, or not listed in `plugins.lst` | Check stdout for `halflife-cli ... loaded`; rebuild Win32; re-run `install_plugin.bat` |
-| Game dies during startup with no visible reason | A fatal error (engine, MetaHook or another plugin) | Read `[halflife-cli] sys_error: ...` on stdout and `<mod>\metahook\configs\halflifecli\errors.log`: the plugin hooks the engine's `Sys_Error` (MetaHook reports its own load failures through it) and mirrors the message before the process goes down |
+| Game dies during startup with no visible reason | A fatal error (engine, MetaHook or another plugin) | Read the newest `fatalerror-<datetime>-<pid>.log` beside the launcher (the directory holding `svencoop.exe`): `-redirect_fatalerror_to_log`, added by `build_game_argv`, records the error title and message there instead of showing a dialog |
 | `RCON failed to start (bind failed ...)` | Port conflict | Set a fixed `[rcon] port` in the ini, or kill the process holding it |
 | `warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled` | Console capture plugin absent/incompatible | Sven UDP replies still work through native redirect; TCP output capture requires VGUI2Extension.dll. |
 | RCON auth fails immediately | Password mismatch | Check the ini; note one-strike disconnect — open a fresh connection |
