@@ -4,7 +4,6 @@
 #include "config/config.h"
 #include "console/console_bridge.h"
 #include "console/output_capture.h"
-#include "console/sys_error.h"
 #include "input/engine_input.h"
 #include "input/focus_lock.h"
 #include "input/input_lock.h"
@@ -33,7 +32,6 @@ void IPluginsV4::Shutdown(void)
 {
 	VGUI2::Shutdown();
 	RconServer::Shutdown();
-	SysError::Shutdown();
 	ConsoleBridge::Shutdown();
 	OutputCapture::Shutdown();
 	InputLock::Shutdown();
@@ -50,10 +48,8 @@ void IPluginsV4::LoadEngine(cl_enginefunc_t *pEngfuncs)
 
 	memcpy(&gEngfuncs, pEngfuncs, sizeof(gEngfuncs));
 
-	// Phase 1 needs no filesystem search paths or initialized client. MetaHook
-	// commits inline hooks after all plugins' LoadEngine callbacks return.
+	// Phase 1 needs no filesystem search paths or initialized client.
 	ConsoleBridge::InitEarlyOutput();
-	SysError::Install();
 }
 
 void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
@@ -82,13 +78,6 @@ void IPluginsV4::LoadClient(cl_exportfuncs_t *pExportFunc)
 	{
 		// Commands still run; only the output mirroring is lost.
 		ConsoleBridge::WriteOut("[halflife-cli] warning: VGUI2Extension.dll missing or incompatible, console output mirroring disabled");
-	}
-	// Retry an early installation failure; successful hooks are idempotent.
-	SysError::Install();
-	if (!SysError::Hooked())
-	{
-		ConsoleBridge::WriteOut(std::string("[halflife-cli] warning: Sys_Error not hooked (") +
-			SysError::HookError() + "), fatal errors will not be mirrored");
 	}
 	RconServer::Install();
 	if (CLI_Config().usermsg_enabled)

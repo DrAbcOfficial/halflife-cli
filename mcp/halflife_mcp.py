@@ -71,7 +71,11 @@ INSTRUCTIONS = (
     "the load to finish before snapshot. Before snapshot, make sure a map is "
     "loaded and rendering (the main menu does not render the world). Verify "
     "cvar/command names with find_cvar before running them. Call quit_game when "
-    "done. Use run_command for everything else; its output is capped at "
+    "done. The game is always launched with -windowed -novid "
+    "-redirect_fatalerror_to_log; if it crashes, read the newest "
+    "fatalerror-<datetime>-<pid>.log beside the launcher (the directory holding "
+    "svencoop.exe) for the fatal error title and message. "
+    "Use run_command for everything else; its output is capped at "
     "max_lines (default 200) and the full text of a capped command is saved to "
     "the file path it returns, so grep that file instead of raising the cap. "
     "Inspect VGUI2 structure with vgui2_tree / vgui2_inspect; follow next_cursor. "
@@ -186,7 +190,7 @@ def vgui2_set_text(ref: str, text: str) -> CallToolResult:
 
 @mcp.tool()
 def launch_game(
-    extra_args: Annotated[list[str], Field(description="Extra game launch arguments (windowed and -novid are always added)", default_factory=list)],
+    extra_args: Annotated[list[str], Field(description="Extra game launch arguments (-windowed, -novid and -redirect_fatalerror_to_log are always added)", default_factory=list)],
     game_dir: Annotated[str | None, Field(description="Game install directory; resolved automatically when omitted")] = None,
     appid: Annotated[int | None, Field(description="Steam app ID (225840 Sven Co-op, 10 Counter-Strike, 70 Half-Life). Any other app is described by MetahookInstallerCLI", ge=1)] = None,
     mod: Annotated[str | None, Field(description="Mod directory under the game root, e.g. cstrike; empty uses the app's default mod")] = None,

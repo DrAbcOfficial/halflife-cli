@@ -17,9 +17,6 @@ namespace OutputCapture
 	// missing and output capture is unavailable.
 	bool Install();
 
-	// Publish a pending unterminated line before a fatal exit.
-	void Flush();
-
 	void Shutdown();
 
 	// Monotonic watermark of captured lines. NextSeq() - 1 is the newest line.

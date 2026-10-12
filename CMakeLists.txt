@@ -34,7 +34,6 @@ add_library(HalflifeCLI SHARED
 	src/config/config.cpp
 	src/console/console_bridge.cpp
 	src/console/output_capture.cpp
-	src/console/sys_error.cpp
 	src/input/engine_input.cpp
 	src/input/focus_lock.cpp
 	src/input/input_lock.cpp
@@ -157,7 +156,6 @@ if(BUILD_TESTING)
         src/core/plugins.cpp
         src/core/exportfuncs.cpp
         src/console/console_bridge.cpp
-        src/console/sys_error.cpp
         "${METAHOOK_SOURCE_PATH}/include/HLSDK/common/interface.cpp")
     target_compile_features(EarlyConsoleTest PRIVATE cxx_std_20)
     target_include_directories(EarlyConsoleTest PRIVATE $<TARGET_PROPERTY:HalflifeCLI,INCLUDE_DIRECTORIES>)

@@ -77,8 +77,9 @@ function(halflifecli_add_launch_game)
     add_executable(LaunchGame EXCLUDE_FROM_ALL "${_launch_root}/dummy_launcher.cpp")
     # MetaHookSv's launcher arguments (-insecure -game <mod>) plus this plugin's
     # requirements: -windowed lets the plugin hide the render window off-screen,
-    # -novid skips the intro movie.
-    set(_arguments "-insecure -game \"${_game_mod}\" -windowed -novid")
+    # -novid skips the intro movie, and -redirect_fatalerror_to_log makes a fatal
+    # error land in a fatalerror-<datetime>-<pid>.log beside the launcher.
+    set(_arguments "-insecure -game \"${_game_mod}\" -windowed -novid -redirect_fatalerror_to_log")
     if(NOT HALFLIFECLI_GAME_ARGUMENTS STREQUAL "")
         string(APPEND _arguments " ${HALFLIFECLI_GAME_ARGUMENTS}")
     endif()

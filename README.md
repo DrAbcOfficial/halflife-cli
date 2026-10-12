@@ -115,8 +115,9 @@ needs its Steam app id, and its mod directory when that is not the app default:
 scripts\install_plugin.bat D:\CS3266 10 cstrike
 ```
 
-`launch_cli.bat` always enforces `-windowed -novid` (off-screen hiding needs
-windowed mode).
+`launch_cli.bat` always enforces `-windowed -novid -redirect_fatalerror_to_log`
+(off-screen hiding needs windowed mode; the last flag writes fatal errors to a
+log beside the launcher).
 
 `install_plugin.bat` now configures and drives the CMake `DeployGame` target, so
 the batch and the Visual Studio workflow share one deployment implementation.
@@ -158,8 +159,8 @@ Open `build\halflife-cli.sln`, select `LaunchGame` as the startup project and
 press F5. This builds `HalflifeCLI`, runs `DeployGame` (which stages the install
 rules and deploys them with `MetahookInstallerCLI`, then registers the plugin in
 `plugins.lst`), and launches `svencoop.exe` with `-insecure -game svencoop
--windowed -novid`. The PDB is deployed alongside the DLL, so breakpoints
-resolve.
+-windowed -novid -redirect_fatalerror_to_log`. The PDB is deployed alongside the
+DLL, so breakpoints resolve.
 
 The game directory is resolved by `MetahookInstallerCLI` (Steam layout), not
 hardcoded. All settings are cache variables:
@@ -246,8 +247,9 @@ not the app's default, to drive another app instead: `game_dir`, the mod
 directory and the launcher then come from `MetahookInstallerCLI`'s
 `-describe-target`, so `launch_game(appid=10, mod="cstrike",
 game_dir="D:\\CS3266")` starts `MetaHook_blob.exe -insecure -game cstrike
--windowed -novid`. Screenshots, usermsg schemas and the RCON endpoint of every
-later call follow the mod directory of the target the session launched.
+-windowed -novid -redirect_fatalerror_to_log`. Screenshots, usermsg schemas and
+the RCON endpoint of every later call follow the mod directory of the target the
+session launched.
 
 Tools: `launch_game`, `game_status`, `run_command`, `find_cvar`,
 `send_key` / `send_mouse` (key and mouse-button events through the engine's
@@ -337,23 +339,17 @@ The first `uv run` downloads the dependencies, which can take a minute.
 - **stdout mirror**: all captured console output is echoed live, including
   `Con_DPrintf` output when the engine routes it to the vgui console (the
   plugin sets `developer 1` by default so it does).
-- **Fatal errors**: the engine's `Sys_Error` is hooked — MetaHook reports its
-  own load failures through the same function — so the message is mirrored as
-  `[halflife-cli] sys_error: ...` and appended to
-  `<mod>\metahook\configs\halflifecli\errors.log` before the game goes down.
-  The original is called last, so the dialog and the exit path are unchanged.
-  Initialization has two phases: `LoadEngine` uses an existing stdout handle
-  and registers the fatal hook without reading config, allocating a console,
-  or starting stdin. `LoadClient` reads config and enables the full bridge
-  before initializing optional backends. `console=false` disables stdout
-  mirroring once config is applied; fatal errors still append to `errors.log`.
-  Ordinary VGUI console capture starts only in the second phase. Pending text
-  without a newline is flushed before the fatal message is exported.
-  MetaHook commits inline hooks after all `LoadEngine` callbacks return, so
-  errors within that transaction or before plugin loading (e.g. missing
-  MetaHook gamedata) remain out of reach. A `warning: Sys_Error not hooked`
-  line reports a hook installation failure after a second-phase retry.
-  Stdin stops at `ExitGame`; fatal output remains available until plugin unload.
+- **Fatal errors**: the plugin does not hook `Sys_Error`. Games are launched
+  with MetaHookSv's `-redirect_fatalerror_to_log`, which suppresses the fatal
+  dialog and appends the error title and message to a
+  `fatalerror-<datetime>-<pid>.log` beside the launcher (the directory holding
+  `svencoop.exe`). This covers engine and early-loader failures — including
+  errors before plugin load that an inline hook could not reach. Initialization
+  has two phases: `LoadEngine` uses an existing stdout handle without reading
+  config, allocating a console, or starting stdin. `LoadClient` reads config and
+  enables the full bridge before initializing optional backends; `console=false`
+  disables stdout mirroring once config is applied. Ordinary VGUI console
+  capture starts only in the second phase. Stdin stops at `ExitGame`.
 - **UserMsg monitor**: every server user message the game receives is decoded
   per a TOML schema and printed as one `[usermsg] Name size=N field=value ...`
   console line (see below). `cli.usermsg` reports the hook state;

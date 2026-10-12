@@ -29,8 +29,10 @@ MOD_DIR_NAME = "svencoop"
 PLUGIN_DATA_DIR_NAME = "halflifecli"
 PLUGIN_CONFIG_NAME = "halflifecli.toml"
 PORT_FILE_NAME = "halflifecli.port"
-# Off-screen hiding needs windowed mode; -novid skips the intro video.
-FORCED_ARGS = ("-windowed", "-novid")
+# Off-screen hiding needs windowed mode; -novid skips the intro video;
+# -redirect_fatalerror_to_log makes MetaHookSv write a fatalerror-<datetime>-<pid>.log
+# beside the launcher instead of showing a dialog, so a crash stays diagnosable.
+FORCED_ARGS = ("-windowed", "-novid", "-redirect_fatalerror_to_log")
 # The plugin prints one of these once RCON startup is decided (src/plugins.cpp).
 # Group 3 retains the legacy startup-error contract; protocol is group 4.
 BANNER_RE = re.compile(r"halflife-cli: RCON (?:listening on (\S*):(\d+)|failed to start \((.*)\))(?: \((goldsrc-udp|source-tcp),)?")
@@ -216,9 +218,9 @@ def rcon_connect_host(bind):
 def build_game_argv(target, extra_args=()):
     """Game command line: launcher, launcher args, mandatory flags, extras.
 
-    The mandatory windowed/novid flags are never missing: a caller repeating one
-    in extra_args drops it rather than duplicating the flag. A bare game root
-    means the Sven default launcher with no launcher-specific arguments.
+    The mandatory flags are never missing: a caller repeating one in extra_args
+    drops it rather than duplicating the flag. A bare game root means the Sven
+    default launcher with no launcher-specific arguments.
     """
     if isinstance(target, GameTarget):
         launcher, launch_args = target.launcher_path, list(target.launch_args)
