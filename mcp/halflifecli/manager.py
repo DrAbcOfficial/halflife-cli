@@ -429,7 +429,14 @@ class Manager:
         try:
             path = find_new_screenshot(before, shots_dirs, SNAPSHOT_TIMEOUT_S)
         except TimeoutError:
-            raise ToolError("no new screenshot appeared; is a map loaded and rendering? (off-screen mode 1)")
+            searched = " or ".join(shots_dirs)
+            raise ToolError(
+                f"no new screenshot appeared within {SNAPSHOT_TIMEOUT_S}s; no image "
+                f"was written to {searched}. The engine `screenshot` command may "
+                "have been taken over by SteamScreenshots.dll (uploads to Steam "
+                "instead of writing a file), rendering may be paused (cli.window 2), "
+                "or the current frame may render no world (the main menu)."
+            )
         try:
             png, width, height, original_width, original_height = shot_to_png(path, max_edge)
         except Exception as e:
