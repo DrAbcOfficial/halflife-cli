@@ -205,6 +205,21 @@ def launch_game(
     return manager.launch_game(extra_args, game_dir, timeout_s, appid, mod)
 
 
+@mcp.tool()
+def attach_game(
+    game_dir: Annotated[str | None, Field(description="Game install directory; resolved automatically when omitted")] = None,
+    appid: Annotated[int | None, Field(description="Steam app ID (225840 Sven Co-op default, 10 Counter-Strike, 70 Half-Life)", ge=1)] = None,
+    mod: Annotated[str | None, Field(description="Mod directory under the game root; omitted uses the app's default mod")] = None,
+) -> GameStatus:
+    """Connect to an externally started game, e.g. launched by RenderDoc.
+
+    Validates the plugin endpoint and RCON authentication before selecting it.
+    Does not launch a process or stop it on server shutdown. read_console is
+    unavailable for attached games. A running managed game must be quit first.
+    """
+    return manager.attach_game(game_dir, appid, mod)
+
+
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
 def game_status() -> GameStatus:
     """Report whether the game is running and how this server is connected to it."""

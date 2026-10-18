@@ -118,6 +118,7 @@ via `read_console`. Tool ↔ manual mapping:
 | MCP tool | Replaces |
 |---|---|
 | `launch_game` | the `subprocess.Popen` + banner-wait launch loop (pass `appid`/`mod` for a non-Sven app; Sven Co-op is the default) |
+| `attach_game` | select an externally started game (e.g. RenderDoc); pass `game_dir`/`appid`/`mod`, validates endpoint and RCON without launching or owning the process |
 | `run_command` | `rcon_client.py` / `run_command` |
 | `find_cvar` | `cli.find <name>` over RCON |
 | `send_key` / `send_mouse` | `cli.trapkey` / `cli.trapmouse` over RCON (see "Sending keyboard and mouse input") |
@@ -127,9 +128,16 @@ via `read_console`. Tool ↔ manual mapping:
 | `game_status` | manual process/port inspection |
 | `usermsg_status` / `usermsg_messages` / `usermsg_events` / `usermsg_set_display` / `usermsg_reload_schema` | `cli.usermsg` over RCON + reading `configs/usermsgs/*.toml` by hand |
 
+For an externally launched Half-Life or Counter-Strike, call
+`attach_game(appid=70, mod="valve")` or `attach_game(appid=10, mod="cstrike")`,
+optionally with `game_dir`. Omitted appid defaults to Sven Co-op, not process
+auto-detection. Then use the same RCON-based tools and `snapshot`; attached
+games expose no `read_console` stream and are not stopped on server shutdown.
+Attachment failure preserves the previous session. A running managed game
+must be quit before selecting an external game.
+
 Only fall back to the manual channels below when no `halflife` MCP server is
-connected, or for games that were not started by the MCP server (attached games
-expose no `read_console` stream).
+connected or the required channel is unavailable.
 
 ## UserMsg monitor
 

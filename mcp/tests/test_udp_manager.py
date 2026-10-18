@@ -73,6 +73,7 @@ class ManagerUdpTests(unittest.TestCase):
                  patch("halflifecli.manager.read_endpoint_file", return_value=endpoint), \
                  patch("halflifecli.manager.plugin_rcon_password", return_value="pw"):
                 self.assertEqual("attached", manager.game_status().mode)
+                self.assertEqual("attached", manager.attach_game("test", 10, "cstrike").mode)
                 self.assertEqual("ready", manager.run_command("echo ok"))
                 manager.shutdown()
                 self.assertFalse(any(b"quit" in command for command in server.commands))
