@@ -148,7 +148,7 @@ class Manager:
     def _session_target(self):
         """Target this session probes for an externally started game, or None.
 
-        The target resolved by launch_game wins. A cold server resolves the
+        The target selected by launch_game or attach_game wins. A cold server resolves the
         default (Sven Co-op) once and remembers it, so polling game_status does
         not repeat the registry/filesystem search.
         """
@@ -238,6 +238,48 @@ class Manager:
         raise ToolError("no game running; call launch_game first")
 
     # -- tools ---------------------------------------------------------------
+
+    def attach_game(self, game_dir=None, appid=None, mod=None):
+        """Select an external game after validating its endpoint and RCON auth.
+
+        A failed selection leaves the current session intact. No process is
+        launched or adopted for shutdown cleanup.
+        """
+        with self._lock:
+            if os.environ.get("HALFLIFE_DISABLE_ATTACH") == "1":
+                raise ToolError("external game attachment is disabled (HALFLIFE_DISABLE_ATTACH)")
+            if self._proc is not None:
+                if self._proc.alive:
+                    raise ToolError("a managed game is running; quit it before attaching another game")
+                if not wait_pid_gone(self._proc.pid, EXIT_CONFIRM_S):
+                    raise ToolError("the previous managed game is still shutting down; wait before attaching")
+            target, reason = resolve_target(game_dir, appid, mod)
+            if target is None:
+                raise ToolError(f"no game directory resolved ({reason})")
+            endpoint = read_endpoint_file(target)
+            if endpoint is None:
+                raise ToolError("game RCON endpoint is missing, not ready, or belongs to a stale process")
+            password = plugin_rcon_password(target)
+            connection = rcon_client.RconConnection(
+                endpoint.host, endpoint.port, password, timeout=2, protocol=endpoint.protocol)
+            try:
+                connection.open()
+            except Exception as e:
+                connection.close()
+                raise ToolError(f"could not attach to game: RCON authentication/probe failed: {e}") from e
+            # Commit only after the new connection has authenticated successfully.
+            if self._attached_rcon is not None:
+                self._attached_rcon.close()
+            if self._rcon is not None:
+                self._rcon.close()
+            self._proc = None
+            self._rcon = None
+            self._target = target
+            self._attached_rcon = connection
+            self._attached_key = (target.directory, target.mod, endpoint, password)
+            return GameStatus(running=True, pid=endpoint.pid, mode="attached",
+                              host=endpoint.host, port=endpoint.port, protocol=endpoint.protocol,
+                              game_dir=target.directory, mod=target.mod)
 
     def launch_game(self, extra_args, game_dir, timeout_s, appid=None, mod=None):
         timeout_s = min(max(timeout_s or BANNER_TIMEOUT_S, 1), LAUNCH_TIMEOUT_CAP_S)

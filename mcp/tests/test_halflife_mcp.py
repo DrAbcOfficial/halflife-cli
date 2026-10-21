@@ -1082,13 +1082,13 @@ class TestStdioSmoke(unittest.TestCase):
             async with Client(params) as client:
                 tools = await client.list_tools()
                 names = {t.name for t in tools.tools}
-                expected = {"launch_game", "game_status", "run_command",
+                expected = {"launch_game", "attach_game", "game_status", "run_command",
                             "find_cvar", "send_key", "send_mouse", "move_mouse",
                             "read_console", "snapshot", "quit_game",
                             "usermsg_status", "usermsg_messages", "usermsg_events",
                             "usermsg_set_display", "usermsg_reload_schema",
                             "vgui2_tree", "vgui2_inspect", "vgui2_click", "vgui2_focus", "vgui2_set_text"}
-                self.assertEqual(names, expected)
+                self.assertEqual(expected, names)
 
         anyio.run(main)
 
