@@ -36,22 +36,36 @@ CS_TARGET = GameTarget(
 )
 
 
+# Raised SvEngine connectionless UDP limits: each native UDP RCON command
+# costs a challenge and a command packet, so the defaults drop dense bursts.
+QUERY_ARGS = ["+max_queries_sec", "100", "+max_queries_sec_global", "1000",
+              "+max_queries_window", "60"]
+
+
 class BuildArgvTests(unittest.TestCase):
     def test_bare_root_keeps_the_sven_command_line(self):
         argv = build_game_argv(r"D:\Sven Co-op")
         self.assertEqual(
-            [r"D:\Sven Co-op\svencoop.exe", "-windowed", "-novid", "-redirect_fatalerror_to_log"], argv)
+            [r"D:\Sven Co-op\svencoop.exe", "-windowed", "-novid", "-redirect_fatalerror_to_log",
+             *QUERY_ARGS], argv)
 
     def test_described_launcher_gets_its_launch_args(self):
         argv = build_game_argv(CS_TARGET)
         self.assertEqual(
             [DESCRIBED["LauncherPath"], "-insecure", "-game", "cstrike", "-windowed", "-novid",
-             "-redirect_fatalerror_to_log"], argv)
+             "-redirect_fatalerror_to_log", *QUERY_ARGS], argv)
 
     def test_extra_args_follow_and_do_not_duplicate_the_mandatory_flags(self):
         argv = build_game_argv(r"D:\Sven Co-op", ["-windowed", "-novid", "-console"])
         self.assertEqual(
-            [r"D:\Sven Co-op\svencoop.exe", "-windowed", "-novid", "-redirect_fatalerror_to_log", "-console"], argv)
+            [r"D:\Sven Co-op\svencoop.exe", "-windowed", "-novid", "-redirect_fatalerror_to_log",
+             *QUERY_ARGS, "-console"], argv)
+
+    def test_a_caller_cvar_override_follows_the_forced_default(self):
+        argv = build_game_argv(r"D:\Sven Co-op", ["+max_queries_sec", "5"])
+        self.assertEqual(
+            [r"D:\Sven Co-op\svencoop.exe", "-windowed", "-novid", "-redirect_fatalerror_to_log",
+             *QUERY_ARGS, "+max_queries_sec", "5"], argv)
 
 
 class ModPathTests(unittest.TestCase):
@@ -183,7 +197,7 @@ class LaunchGameTargetTests(unittest.TestCase):
             status = manager.launch_game([], None, 2, 10, "cstrike")
         resolve.assert_called_once_with(None, 10, "cstrike")
         self.assertEqual([DESCRIBED["LauncherPath"], "-insecure", "-game", "cstrike", "-windowed", "-novid",
-                          "-redirect_fatalerror_to_log"], seen["argv"])
+                          "-redirect_fatalerror_to_log", *QUERY_ARGS], seen["argv"])
         self.assertEqual(DESCRIBED["GameDirectory"], seen["cwd"])
         self.assertEqual(("managed", DESCRIBED["GameDirectory"], "cstrike"),
                          (status.mode, status.game_dir, status.mod))

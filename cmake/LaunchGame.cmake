@@ -14,7 +14,7 @@ set(HALFLIFECLI_GAME_APPID "225840" CACHE STRING "Steam app ID (225840 = Sven Co
 set(HALFLIFECLI_GAME_MOD "" CACHE STRING
     "Game mod directory (empty: MetahookInstallerCLI's app default)")
 set(HALFLIFECLI_GAME_ARGUMENTS "" CACHE STRING
-    "Extra game arguments appended after -insecure -game <mod> -windowed -novid")
+    "Extra game arguments appended after -insecure -game <mod> -windowed -novid +max_queries_*")
 set(HALFLIFECLI_INSTALLER_CLI_EXECUTABLE "" CACHE FILEPATH
     "Override with a self-contained MetahookInstallerCLI.exe")
 set(HALFLIFECLI_INSTALLER_RELEASE "latest" CACHE STRING
@@ -79,7 +79,9 @@ function(halflifecli_add_launch_game)
     # requirements: -windowed lets the plugin hide the render window off-screen,
     # -novid skips the intro movie, and -redirect_fatalerror_to_log makes a fatal
     # error land in a fatalerror-<datetime>-<pid>.log beside the launcher.
-    set(_arguments "-insecure -game \"${_game_mod}\" -windowed -novid -redirect_fatalerror_to_log")
+    # The +max_queries_* cvars raise SvEngine's per-IP connectionless UDP limit;
+    # each native UDP RCON command costs a challenge and a command packet.
+    set(_arguments "-insecure -game \"${_game_mod}\" -windowed -novid -redirect_fatalerror_to_log +max_queries_sec 100 +max_queries_sec_global 1000 +max_queries_window 60")
     if(NOT HALFLIFECLI_GAME_ARGUMENTS STREQUAL "")
         string(APPEND _arguments " ${HALFLIFECLI_GAME_ARGUMENTS}")
     endif()
