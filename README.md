@@ -117,7 +117,10 @@ scripts\install_plugin.bat D:\CS3266 10 cstrike
 
 `launch_cli.bat` always enforces `-windowed -novid -redirect_fatalerror_to_log`
 (off-screen hiding needs windowed mode; the last flag writes fatal errors to a
-log beside the launcher).
+log beside the launcher), plus `+max_queries_sec 100 +max_queries_sec_global
+1000 +max_queries_window 60`. SvEngine limits connectionless UDP packets per
+source IP, and each native UDP RCON command costs a challenge and a command
+packet, so the defaults drop dense command bursts.
 
 `install_plugin.bat` now configures and drives the CMake `DeployGame` target, so
 the batch and the Visual Studio workflow share one deployment implementation.
@@ -159,8 +162,9 @@ Open `build\halflife-cli.sln`, select `LaunchGame` as the startup project and
 press F5. This builds `HalflifeCLI`, runs `DeployGame` (which stages the install
 rules and deploys them with `MetahookInstallerCLI`, then registers the plugin in
 `plugins.lst`), and launches `svencoop.exe` with `-insecure -game svencoop
--windowed -novid -redirect_fatalerror_to_log`. The PDB is deployed alongside the
-DLL, so breakpoints resolve.
+-windowed -novid -redirect_fatalerror_to_log +max_queries_sec 100
++max_queries_sec_global 1000 +max_queries_window 60`. The PDB is deployed
+alongside the DLL, so breakpoints resolve.
 
 The game directory is resolved by `MetahookInstallerCLI` (Steam layout), not
 hardcoded. All settings are cache variables:
@@ -247,9 +251,10 @@ not the app's default, to drive another app instead: `game_dir`, the mod
 directory and the launcher then come from `MetahookInstallerCLI`'s
 `-describe-target`, so `launch_game(appid=10, mod="cstrike",
 game_dir="D:\\CS3266")` starts `MetaHook_blob.exe -insecure -game cstrike
--windowed -novid -redirect_fatalerror_to_log`. Screenshots, usermsg schemas and
-the RCON endpoint of every later call follow the mod directory of the target the
-session launched.
+-windowed -novid -redirect_fatalerror_to_log +max_queries_sec 100
++max_queries_sec_global 1000 +max_queries_window 60`. Screenshots, usermsg
+schemas and the RCON endpoint of every later call follow the mod directory of
+the target the session launched.
 
 Tools: `launch_game`, `game_status`, `run_command`, `find_cvar`,
 `send_key` / `send_mouse` (key and mouse-button events through the engine's
@@ -381,12 +386,14 @@ falls back to the old file or triggers a protocol guess.
 
 UDP replies are OOB `A2C_PRINT` datagrams with at most 1200 text bytes each.
 The client serializes commands and uses a new socket/challenge for every
-command to isolate late replies. It aggregates arrival order until 100 ms of
-silence (10 s total timeout by default; 1 MiB output cap). UDP cannot guarantee
-complete, ordered or duplicate-free output; silence can truncate delayed
-replies. A total timeout with partial output raises `PartialResponseError`.
-Already-sent commands are never automatically retried, including `map` and
-`quit`. Readiness uses the read-only `version` command.
+command to isolate late replies. SvEngine counts those two packets per source
+IP against `max_queries_sec` / `max_queries_sec_global` / `max_queries_window`,
+so every managed launch raises them (see "Install"). It aggregates arrival
+order until 100 ms of silence (10 s total timeout by default; 1 MiB output
+cap). UDP cannot guarantee complete, ordered or duplicate-free output; silence
+can truncate delayed replies. A total timeout with partial output raises
+`PartialResponseError`. Already-sent commands are never automatically retried,
+including `map` and `quit`. Readiness uses the read-only `version` command.
 
 Input blocking uses `SDL_SetEventFilter` on SDL2 engines (including
 sdl2-compat), or a gamedata-resolved inline hook on `CGame_WindowProc` on

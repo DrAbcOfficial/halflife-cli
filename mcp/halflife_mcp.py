@@ -73,7 +73,9 @@ INSTRUCTIONS = (
     "than the world, so load a map when you need a gameplay frame. Verify "
     "cvar/command names with find_cvar before running them. Call quit_game when "
     "done. The game is always launched with -windowed -novid "
-    "-redirect_fatalerror_to_log; if it crashes, read the newest "
+    "-redirect_fatalerror_to_log and the raised "
+    "+max_queries_sec 100 +max_queries_sec_global 1000 +max_queries_window 60 "
+    "UDP query limits; if it crashes, read the newest "
     "fatalerror-<datetime>-<pid>.log beside the launcher (the directory holding "
     "svencoop.exe) for the fatal error title and message. "
     "Use run_command for everything else; its output is capped at "
@@ -191,7 +193,7 @@ def vgui2_set_text(ref: str, text: str) -> CallToolResult:
 
 @mcp.tool()
 def launch_game(
-    extra_args: Annotated[list[str], Field(description="Extra game launch arguments (-windowed, -novid and -redirect_fatalerror_to_log are always added)", default_factory=list)],
+    extra_args: Annotated[list[str], Field(description="Extra game launch arguments (-windowed, -novid, -redirect_fatalerror_to_log and the +max_queries_* UDP limits are always added)", default_factory=list)],
     game_dir: Annotated[str | None, Field(description="Game install directory; resolved automatically when omitted")] = None,
     appid: Annotated[int | None, Field(description="Steam app ID (225840 Sven Co-op, 10 Counter-Strike, 70 Half-Life). Any other app is described by MetahookInstallerCLI", ge=1)] = None,
     mod: Annotated[str | None, Field(description="Mod directory under the game root, e.g. cstrike; empty uses the app's default mod")] = None,

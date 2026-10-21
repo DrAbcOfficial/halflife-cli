@@ -72,14 +72,18 @@ console.
 
 ```python
 proc = subprocess.Popen(
-    [os.path.join(game_dir, "svencoop.exe"), "-windowed", "-novid", "-redirect_fatalerror_to_log"],
+    [os.path.join(game_dir, "svencoop.exe"), "-windowed", "-novid", "-redirect_fatalerror_to_log",
+     "+max_queries_sec", "100", "+max_queries_sec_global", "1000", "+max_queries_window", "60"],
     cwd=game_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 ```
 
 `-windowed` is mandatory (off-screen hiding requires windowed mode), `-novid`
 skips the intro, and `-redirect_fatalerror_to_log` makes MetaHookSv write a
 `fatalerror-<datetime>-<pid>.log` beside the launcher instead of showing a
-dialog, so a crash stays diagnosable. Always pass all three.
+dialog, so a crash stays diagnosable. Always pass all three. Also pass the
+`+max_queries_*` limits: SvEngine caps connectionless UDP packets per source
+IP, and every native UDP RCON command costs a challenge and a command packet,
+so dense command bursts lose the challenge and the command is never sent.
 
 For any app other than Sven Co-op, let the resolved target build the command
 line instead of hardcoding the executable: `build_game_argv` starts the

@@ -33,6 +33,14 @@ PORT_FILE_NAME = "halflifecli.port"
 # -redirect_fatalerror_to_log makes MetaHookSv write a fatalerror-<datetime>-<pid>.log
 # beside the launcher instead of showing a dialog, so a crash stays diagnosable.
 FORCED_ARGS = ("-windowed", "-novid", "-redirect_fatalerror_to_log")
+# SvEngine caps connectionless UDP packets per source IP (defaults 3/s, 30/s
+# global, 60 s window). Each native UDP RCON command costs two packets (the
+# challenge and the command), so dense command bursts drop the challenge and a
+# command never leaves. Raised for every launch the driver starts. GoldSrc
+# engines ignore the unknown cvars.
+FORCED_CVARS = ("+max_queries_sec", "100",
+                "+max_queries_sec_global", "1000",
+                "+max_queries_window", "60")
 # The plugin prints one of these once RCON startup is decided (src/plugins.cpp).
 # Group 3 retains the legacy startup-error contract; protocol is group 4.
 BANNER_RE = re.compile(r"halflife-cli: RCON (?:listening on (\S*):(\d+)|failed to start \((.*)\))(?: \((goldsrc-udp|source-tcp),)?")
@@ -216,10 +224,12 @@ def rcon_connect_host(bind):
 
 
 def build_game_argv(target, extra_args=()):
-    """Game command line: launcher, launcher args, mandatory flags, extras.
+    """Game command line: launcher, launcher args, mandatory flags and cvars, extras.
 
     The mandatory flags are never missing: a caller repeating one in extra_args
-    drops it rather than duplicating the flag. A bare game root means the Sven
+    drops it rather than duplicating the flag. The forced cvars come before
+    extra_args, so a caller passing its own `+max_queries_sec ...` follows the
+    default and wins as the later assignment. A bare game root means the Sven
     default launcher with no launcher-specific arguments.
     """
     if isinstance(target, GameTarget):
@@ -227,7 +237,7 @@ def build_game_argv(target, extra_args=()):
     else:
         launcher, launch_args = os.path.join(target, EXECUTABLE_NAME), []
     extra = [arg for arg in extra_args if arg.lower() not in FORCED_ARGS]
-    return [launcher, *launch_args, *FORCED_ARGS, *extra]
+    return [launcher, *launch_args, *FORCED_ARGS, *FORCED_CVARS, *extra]
 
 
 def _kill_on_close_job(pid):
