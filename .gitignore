@@ -14,6 +14,7 @@ Win32/
 # Runtime artifacts produced by the plugin in repo dir
 *.port
 *.log
+steam_appid.txt
 
 # Machine-local game directory configs: scripts\ for the .bat launchers,
 # mcp\ for the Python tooling (see mcp/find_game.py)
