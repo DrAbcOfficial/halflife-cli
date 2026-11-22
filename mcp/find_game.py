@@ -38,7 +38,7 @@ import re
 import subprocess
 import sys
 
-from game_process import GameTarget
+from game_process import GameTarget, LINUX_EXECUTABLES
 
 MARKER = "svencoop.exe"
 CONFIG_NAME = "game_dir.txt"
@@ -244,6 +244,14 @@ def resolve_target(explicit=None, appid=None, mod=None):
     value = explicit.strip().strip('"') if explicit is not None else None
 
     if selected_appid == DEFAULT_APPID:
+        if sys.platform.startswith("linux"):
+            if value:
+                directory = os.path.abspath(value)
+                for name in LINUX_EXECUTABLES:
+                    launcher = os.path.join(directory, name)
+                    if os.path.isfile(launcher) and os.access(launcher, os.X_OK):
+                        return GameTarget(directory, launcher=launcher, source="--dir", native=True), None
+            return None, "Linux Sven Co-op requires an explicit game directory with an executable launcher"
         if value is None:
             directory, source = _resolve_sven_directory()
             if directory is None:

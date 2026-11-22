@@ -82,8 +82,8 @@ INSTRUCTIONS = (
     "max_lines (default 200) and the full text of a capped command is saved to "
     "the file path it returns, so grep that file instead of raising the cap. "
     "Inspect VGUI2 structure with vgui2_tree / vgui2_inspect; follow next_cursor. "
-    "Use returned references with vgui2_click / vgui2_focus. Semantic text/state "
-    "and vgui2_set_text are currently unsupported; VGUI1 is excluded. "
+    "Use returned references with vgui2_click / vgui2_focus. VGUI2 text and state "
+    "are available on controls that report semantic_support; VGUI1 is excluded. "
     "To press keys or mouse buttons in the game use send_key / send_mouse. "
     "For UI pointing use move_mouse, or send_mouse with x/y, measured in "
     "snapshot's original_size pixels (returned_size describes the scaled image); "
@@ -138,8 +138,8 @@ def vgui2_tree(
     """Read VGUI2 structure, names and geometry. Default: visible nodes, embedded root.
 
     Follow next_cursor for the same frozen snapshot. References expire on destruction/restart.
-    Bounds use original screenshot pixels; visible does not mean unobstructed. VGUI1 and
-    semantic text/state are unsupported (semantic_support=false).
+    Bounds use original screenshot pixels. A visible control can be obstructed.
+    The semantic_support field reports whether the control provides text or state.
     """
     result = _vgui2_call(vgui2_client.tree, root, include_hidden, max_depth, cursor)
     text = result.pop("text_tree")
@@ -148,8 +148,7 @@ def vgui2_tree(
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
 def vgui2_inspect(ref: str, text_offset: Annotated[int, Field(ge=0)] = 0) -> CallToolResult:
-    """Read current VGUI2 geometry, visibility and input flags. Semantic text/state is
-    unsupported; text_offset is retained for compatibility and returns no text.
+    """Read current VGUI2 geometry, visibility and input flags, and page text when supported.
     """
     return _vgui2_result(_vgui2_call(vgui2_client.inspect, ref, text_offset))
 
@@ -184,10 +183,7 @@ def vgui2_focus(ref: str) -> CallToolResult:
 
 @mcp.tool()
 def vgui2_set_text(ref: str, text: str) -> CallToolResult:
-    """Compatibility placeholder: returns unsupported until RequestInfo automation is available.
-
-    Does not type, upload or modify text in this plugin version.
-    """
+    """Set text on an editable VGUI2 control that advertises the set_text action."""
     return _vgui2_result(_vgui2_call(vgui2_client.set_text, ref, text))
 
 
