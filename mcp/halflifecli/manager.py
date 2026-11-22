@@ -6,6 +6,7 @@ All tool calls run under the instance lock: tools execute on AnyIO worker
 threads.
 """
 
+import dataclasses
 import glob
 import logging
 import os
@@ -170,7 +171,8 @@ class Manager:
         endpoint = read_endpoint_file(target)
         if endpoint is None:
             return None
-        password = plugin_rcon_password(target)
+        config_target = dataclasses.replace(target, native=True) if endpoint.native else target
+        password = plugin_rcon_password(config_target)
         key = (target.directory, target.mod, endpoint, password)
         if self._attached_key != key:
             if self._attached_rcon is not None:
@@ -194,9 +196,20 @@ class Manager:
         if endpoint is None:
             raise ToolError("game RCON endpoint is not ready or belongs to a stale process")
         if endpoint != self._endpoint:
+            connection = None
+            if endpoint.native:
+                password = plugin_rcon_password(self._target)
+                connection = rcon_client.RconConnection(
+                    endpoint.host, endpoint.port, password, protocol=endpoint.protocol)
+                try:
+                    connection.open()
+                except Exception as error:
+                    connection.close()
+                    raise ToolError(f"could not reconnect to game: {error}") from error
+                self._password = password
             if self._rcon is not None:
                 self._rcon.close()
-            self._rcon = None
+            self._rcon = connection
             self._endpoint = endpoint
             self._host, self._port, self._protocol = endpoint.host, endpoint.port, endpoint.protocol
 
@@ -234,7 +247,8 @@ class Manager:
         if self._proc is not None and self._proc.alive and self._target is not None:
             return self._target
         if self._probe_attached() is not None:
-            return self._target
+            endpoint = self._attached_key[2]
+            return dataclasses.replace(self._target, native=True) if endpoint.native else self._target
         raise ToolError("no game running; call launch_game first")
 
     # -- tools ---------------------------------------------------------------
@@ -259,7 +273,8 @@ class Manager:
             endpoint = read_endpoint_file(target)
             if endpoint is None:
                 raise ToolError("game RCON endpoint is missing, not ready, or belongs to a stale process")
-            password = plugin_rcon_password(target)
+            config_target = dataclasses.replace(target, native=True) if endpoint.native else target
+            password = plugin_rcon_password(config_target)
             connection = rcon_client.RconConnection(
                 endpoint.host, endpoint.port, password, timeout=2, protocol=endpoint.protocol)
             try:
@@ -303,6 +318,10 @@ class Manager:
             target, reason = resolve_target(game_dir, appid, mod)
             if target is None:
                 raise ToolError(f"no game directory resolved ({reason})")
+            if any(arg.lower() == "-hlcli" for arg in extra_args):
+                target = dataclasses.replace(target, native=True)
+            elif target.native:
+                extra_args = [*extra_args, "-hlcli"]
             proc = GameProcess(build_game_argv(target, extra_args), cwd=target.directory)
             proc.start()
             try:
@@ -333,6 +352,11 @@ class Manager:
                 detail = ("; last console output: " + " | ".join(tail)) if tail else ""
                 raise ToolError(
                     f"the game exited (code {code}) before the plugin printed its RCON banner{detail}")
+            except TimeoutError as error:
+                tail = proc.tail(LAUNCH_FAILURE_TAIL_LINES)
+                proc.stop(timeout=EXIT_CODE_GRACE_S)
+                detail = ("; last console output: " + " | ".join(tail)) if tail else ""
+                raise ToolError(f"{error}{detail}") from error
             except Exception:
                 proc.stop(timeout=EXIT_CODE_GRACE_S)
                 raise
@@ -445,8 +469,6 @@ class Manager:
         if proc is None:
             return ConsoleWindow(lines=[], next_cursor=cursor or 0,
                                  note="no game launched by this server (attached games expose no console stream)")
-        if cursor is None:
-            cursor = proc.next_cursor
         sl = proc.lines_since(cursor, max_lines)
         return ConsoleWindow(lines=sl.lines, next_cursor=sl.next_cursor, dropped=sl.dropped)
 

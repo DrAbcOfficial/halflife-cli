@@ -23,6 +23,7 @@ import time
 log = logging.getLogger(__name__)
 
 EXECUTABLE_NAME = "svencoop.exe"
+LINUX_EXECUTABLES = ("svencoop_linux", "svencoop")
 MOD_DIR_NAME = "svencoop"
 # The plugin keeps its config, port file and usermsg schemas in its own
 # subfolder of MetaHook's configs directory (src/core/plugins.cpp writes there).
@@ -106,6 +107,7 @@ class GameTarget:
     launcher: str = ""
     launch_args: tuple = ()
     source: str = ""
+    native: bool = False
 
     @property
     def launcher_path(self):
@@ -125,7 +127,9 @@ def mod_dir(target):
 
 
 def plugin_config_dir(target):
-    """The plugin's own config subfolder inside MetaHook's configs dir."""
+    """The automation data directory for the selected engine integration."""
+    if isinstance(target, GameTarget) and target.native:
+        return os.path.join(mod_dir(target), PLUGIN_DATA_DIR_NAME)
     return os.path.join(mod_dir(target), "metahook", "configs", PLUGIN_DATA_DIR_NAME)
 
 
@@ -170,6 +174,13 @@ def process_liveness(pid):
     which has already terminated; its launcher mutex is released, so callers
     treat it as gone.
     """
+    if os.name == "posix":
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as stream:
+                state = stream.read().rsplit(")", 1)[1].split()[0]
+            return 'exited' if state in ("Z", "X", "x") else 'live'
+        except (OSError, IndexError):
+            return 'absent'
     try:
         import win32api
         import win32con
@@ -297,8 +308,15 @@ class GameProcess:
             raise RuntimeError("game process already started")
         # stdout/stderr must be pipes, never inherited: when this runs inside
         # the MCP server, its own stdout is the protocol channel.
+        env = None
+        if os.name == "posix":
+            env = os.environ.copy()
+            library_dirs = [self.cwd, os.path.join(self.cwd, MOD_DIR_NAME, "cl_dlls")]
+            if env.get("LD_LIBRARY_PATH"):
+                library_dirs.append(env["LD_LIBRARY_PATH"])
+            env["LD_LIBRARY_PATH"] = os.pathsep.join(library_dirs)
         self._proc = subprocess.Popen(
-            self.argv, cwd=self.cwd,
+            self.argv, cwd=self.cwd, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         self._job = _kill_on_close_job(self._proc.pid)
         threading.Thread(target=self._drain_stdout, name="game-stdout", daemon=True).start()

@@ -1,9 +1,7 @@
-"""Reads the plugin's halflifecli.toml and RCON port file from a game install.
+"""Reads HLCLI configuration and validated RCON endpoints from a game install.
 
-Both files live under <game>/<mod>/metahook/configs/; paths are built by
-game_process from a GameTarget (or a bare game root, which means the Sven
-default). Everything here tolerates absence: a missing or broken file reads
-as "no setting", like the plugin's own compiled-in defaults.
+Native engines use <game>/<mod>/halflifecli/ and plugins use
+<game>/<mod>/metahook/configs/. Paths come from game_process and GameTarget.
 """
 
 import os
@@ -13,7 +11,7 @@ import json
 import time
 import tomllib
 
-from game_process import plugin_config_path, port_file_path, plugin_config_dir, rcon_connect_host
+from game_process import GameTarget, plugin_config_path, port_file_path, plugin_config_dir, rcon_connect_host
 from rcon_client import PROTOCOLS
 
 
@@ -24,6 +22,9 @@ class Endpoint:
     port: int
     pid: int | None = None
     process_start_filetime: str | None = None
+    native: bool = False
+    linux_identity: tuple[str, str] | None = None
+    published_at: float | None = None
 
 
 def process_start_filetime(pid):
@@ -53,6 +54,19 @@ def process_start_filetime(pid):
         kernel.CloseHandle(handle)
 
 
+def linux_process_identity(pid):
+    try:
+        with open("/proc/sys/kernel/random/boot_id", encoding="ascii") as stream:
+            boot_id = stream.read().strip()
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as stream:
+            fields = stream.read().rsplit(")", 1)[1].split()
+        if fields[0] not in ("Z", "X", "x"):
+            return boot_id, fields[19]
+    except (OSError, IndexError):
+        pass
+    return None
+
+
 def read_endpoint_file(target, expected_pid=None):
     """Validated metadata, or an explicitly Source-TCP legacy single-line file.
 
@@ -60,6 +74,15 @@ def read_endpoint_file(target, expected_pid=None):
     a stale port file or guess the protocol by sending a command twice.
     Callers must still actively probe authentication before reporting ready.
     """
+    if isinstance(target, GameTarget) and not target.native and expected_pid is None:
+        native = _read_endpoint(dataclasses.replace(target, native=True), None)
+        if native is not None:
+            return native
+    return _read_endpoint(target, expected_pid)
+
+
+def _read_endpoint(target, expected_pid):
+    native = isinstance(target, GameTarget) and target.native
     path = os.path.join(plugin_config_dir(target), "halflifecli.endpoint.json")
     try:
         with open(path, encoding="utf-8") as stream:
@@ -72,16 +95,27 @@ def read_endpoint_file(target, expected_pid=None):
         if type(pid) is not int or pid <= 0 or (expected_pid is not None and expected_pid != pid):
             return None
         bind = str(ipaddress.IPv4Address(data["bind"]))
+        if native and protocol != "goldsrc-udp":
+            return None
+        published = data.get("published_at")
+        if type(published) not in (int, float) or not 0 < published <= time.time() + 5:
+            return None
+        if native and os.name == "posix":
+            identity = (data.get("boot_id"), data.get("process_start_ticks"))
+            if linux_process_identity(pid) != identity:
+                return None
+            return Endpoint(protocol, rcon_connect_host(bind), port, pid, native=True,
+                            linux_identity=identity, published_at=published)
         start = data.get("process_start_filetime")
         if not isinstance(start, str) or not start.isdecimal() or process_start_filetime(pid) != start:
             return None
-        published = data.get("published_at")
         started = int(start) / 10000000 - 11644473600
-        if type(published) not in (int, float) or not started <= published + 1 <= time.time() + 6:
+        if not started <= published + 1:
             return None
-        return Endpoint(protocol, rcon_connect_host(bind), port, pid, start)
+        return Endpoint(protocol, rcon_connect_host(bind), port, pid, start, native=native,
+                        published_at=published if native else None)
     except FileNotFoundError:
-        port = read_port_file(target)
+        port = None if native else read_port_file(target)
         if port is not None:
             return Endpoint("source-tcp", rcon_connect_host(plugin_rcon_bind(target)), port)
     except (OSError, ValueError, KeyError, TypeError, OverflowError):
