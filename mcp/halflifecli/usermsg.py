@@ -19,9 +19,13 @@ from halflifecli.plugin_config import read_plugin_config
 
 # "cli.usermsg: schema=svencoop.toml coord_size=4 messages=101 display=on
 #  hooks: 85 wrapped, 16 self-registered, 0 pending"
-USERMSG_STATUS_RE = re.compile(
+USERMSG_STATUS_PREFIX = (
     r"cli\.usermsg: schema=(\S+) coord_size=(\d+) messages=(\d+) display=(on|off) "
-    r"hooks: (\d+) wrapped, (\d+) self-registered, (\d+) pending", re.MULTILINE)
+)
+USERMSG_STATUS_RE = re.compile(
+    USERMSG_STATUS_PREFIX + r"hooks: (\d+) wrapped, (\d+) self-registered, (\d+) pending")
+NATIVE_USERMSG_STATUS_RE = re.compile(
+    USERMSG_STATUS_PREFIX + r"registered: (\d+) monitored, (\d+) absent, (\d+) unknown")
 
 # "#17 [usermsg] CurWeapon size=5 state=1 weaponId=18 clip=35"
 USERMSG_EVENT_RE = re.compile(r"#(\d+) \[usermsg\] (\S+) size=(\d+)(?: (.*))?$", re.MULTILINE)
@@ -37,7 +41,13 @@ def parse_usermsg_status(text):
     """UserMsgStatus from `cli.usermsg` output, or None when unrecognized."""
     m = USERMSG_STATUS_RE.search(text)
     if not m:
-        return None
+        m = NATIVE_USERMSG_STATUS_RE.search(text)
+        if not m:
+            return None
+        return UserMsgStatus(
+            schema_file=m.group(1), coord_size=int(m.group(2)), messages=int(m.group(3)),
+            display=m.group(4) == "on", wrapped=0, self_registered=0, pending=0,
+            monitored=int(m.group(5)), absent=int(m.group(6)), unknown=int(m.group(7)))
     return UserMsgStatus(
         schema_file=m.group(1), coord_size=int(m.group(2)), messages=int(m.group(3)),
         display=m.group(4) == "on", wrapped=int(m.group(5)),

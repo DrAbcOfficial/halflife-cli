@@ -30,6 +30,9 @@ class UserMsgStatus(BaseModel):
     wrapped: int           # hooked on top of the game DLL's own hook
     self_registered: int   # no game DLL hook; monitor-created display-only entry
     pending: int           # not yet resolvable in the engine's usermsg list
+    monitored: int | None = None  # direct engine dispatch coverage
+    absent: int | None = None
+    unknown: int | None = None
 
 
 class UserMsgEvent(BaseModel):
