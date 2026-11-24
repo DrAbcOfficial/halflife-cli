@@ -2,7 +2,9 @@
 #
 # Transcribed from reverse-engineered hl-10210 client.so sources; every
 # field order verified by decompilation. Numeric message ids are assigned per server via
-# svc_newusermsg, so everything here is name-driven.
+# svc_newusermsg, so everything here is name-driven. Cross-checked against the
+# GoldSrc-SDK sources: cl_dll/*.cpp (client hook read order) and dlls/*.cpp
+# (server MESSAGE_BEGIN/WRITE_* order, which is authoritative for the wire).
 #
 # Schema syntax:
 #   [primitives] coord_size = 2|4     bytes of "coord" (2: short/8, 4: long/8)
@@ -78,9 +80,9 @@ fields = [
 	{ name = "ammo1Max", type = "byte", note = "255=-1" },
 	{ name = "ammo2Type", type = "char" },
 	{ name = "ammo2Max", type = "byte", note = "255=-1" },
-	{ name = "bucket", type = "char" },
-	{ name = "bucketPosition", type = "char" },
-	{ name = "slot", type = "char" },
+	{ name = "slot", type = "char", note = "weapon bucket (WEAPON.iSlot)" },
+	{ name = "slotPosition", type = "char", note = "position in bucket (iSlotPos)" },
+	{ name = "weaponId", type = "char", note = "weapon index (iId)" },
 	{ name = "flags", type = "byte" },
 ]
 
@@ -173,13 +175,14 @@ fields = [
 [[usermsg]]
 name = "TextMsg"
 channel = "text"
+note = "MsgFunc_TextMsg: one localised format string plus up to four %s arguments"
 fields = [
 	{ name = "dest", type = "byte", note = "1|2=console 3=chat 4=center" },
+	{ name = "format", type = "string", note = "localised text containing %s" },
 	{ name = "param1", type = "string" },
 	{ name = "param2", type = "string" },
 	{ name = "param3", type = "string" },
 	{ name = "param4", type = "string" },
-	{ name = "param5", type = "string" },
 ]
 
 [[usermsg]]
@@ -192,7 +195,18 @@ fields = [
 [[usermsg]]
 name = "GameTitle"
 channel = "text"
-fields = []
+note = "server sends one unused byte; MsgFunc_GameTitle reads no fields"
+fields = [
+	{ name = "unused", type = "byte" },
+]
+
+[[usermsg]]
+name = "Logo"
+channel = "hud"
+note = "spray-logo state; the server registers Logo on demand (REG_USER_MSG(\"Logo\", 1)) and sends one byte, the client stores it in CHud::m_iLogo"
+fields = [
+	{ name = "on", type = "byte" },
+]
 
 [[usermsg]]
 name = "Train"
@@ -229,11 +243,12 @@ fields = [
 [[usermsg]]
 name = "ShowMenu"
 channel = "hud"
+note = "the text string is always on the wire (even for the slots==0 close message, where it is empty); MsgFunc_ShowMenu itself only reads it when validSlots != 0"
 fields = [
 	{ name = "validSlots", type = "short" },
 	{ name = "displayTime", type = "char", note = "0=forever" },
 	{ name = "isMore", type = "byte" },
-	{ name = "text", type = "string", when = { field = "isMore", eq = 0 } },
+	{ name = "text", type = "string" },
 ]
 
 [[usermsg]]
@@ -305,9 +320,9 @@ fields = [
 [[usermsg]]
 name = "ValClass"
 channel = "score"
-note = "valid classes; shorts until the buffer runs out"
+note = "MsgFunc_ValClass reads exactly five shorts (valid classes)"
 fields = [
-	{ name = "classes", type = "short", count = "*" },
+	{ name = "classes", type = "short", count = 5 },
 ]
 
 [[usermsg]]
@@ -354,7 +369,10 @@ fields = []
 [[usermsg]]
 name = "ResetHUD"
 channel = "hud"
-fields = []
+note = "player.cpp writes one zero byte; MsgFunc_ResetHUD ignores the payload (cstrike overrides this with zero fields)"
+fields = [
+	{ name = "unused", type = "byte" },
+]
 
 [[usermsg]]
 name = "GameMode"
@@ -385,14 +403,41 @@ name = "SpecFade"
 channel = "screen"
 fields = []
 
+# ------------------------------------------- engine-handled (HookServerMsg)
+# The engine registers these two itself (cdll_int.cpp: HookServerMsg) and
+# V_ScreenShake/V_ScreenFade read them; the layouts are fixed.
+
+[[usermsg]]
+name = "ScreenShake"
+channel = "screen"
+note = "engine-handled (V_ScreenShake)"
+fields = [
+	{ name = "amplitude", type = "short" },
+	{ name = "duration", type = "short" },
+	{ name = "frequency", type = "short" },
+]
+
+[[usermsg]]
+name = "ScreenFade"
+channel = "screen"
+note = "engine-handled (V_ScreenFade)"
+fields = [
+	{ name = "duration", type = "short" },
+	{ name = "holdTime", type = "short" },
+	{ name = "flags", type = "short" },
+	{ name = "r", type = "byte" },
+	{ name = "g", type = "byte" },
+	{ name = "b", type = "byte" },
+	{ name = "a", type = "byte" },
+]
+
 [[usermsg]]
 name = "VoiceMask"
 channel = "meta"
-note = "engine voice system"
+note = "voice_gamemgr writes VOICE_MAX_PLAYERS_DW(1) dword pair = 8 bytes; the client also tries to read a trailing serverModEnable byte, which is not on the wire"
 fields = [
 	{ name = "audiblePlayers", type = "long" },
 	{ name = "bannedPlayers", type = "long" },
-	{ name = "serverModEnable", type = "byte" },
 ]
 
 [[usermsg]]

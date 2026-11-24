@@ -1,7 +1,9 @@
 # Counter-Strike 1.x (mod dir: cstrike) UserMsg wire formats.
 #
 # Transcribed from reverse-engineered cstrike client.so sources; every
-# message verified by decompilation.
+# message verified by decompilation. Cross-checked against the GoldSrc-SDK
+# cstrike sources: cl_dll/, vgui2/game_controls/ (client read order) and
+# dlls/ (server MESSAGE_BEGIN/WRITE_* order, authoritative for the wire).
 #
 # Only messages whose wire format differs from Half-Life, plus CS-specific
 # messages, are defined here; everything else is inherited from valve.toml.
@@ -71,15 +73,15 @@ fields = [
 [[usermsg]]
 name = "TextMsg"
 channel = "text"
-note = "dest==5 (chat to a player) carries an extra index string first"
+note = "dest==5 (chat to a player) carries an extra index string first; then one format string and four %s arguments"
 fields = [
 	{ name = "dest", type = "byte" },
 	{ name = "playerIdx", type = "string", when = { field = "dest", eq = 5 } },
+	{ name = "format", type = "string", note = "localised text containing %s" },
 	{ name = "param1", type = "string" },
 	{ name = "param2", type = "string" },
 	{ name = "param3", type = "string" },
 	{ name = "param4", type = "string" },
-	{ name = "param5", type = "string" },
 ]
 
 [[usermsg]]
@@ -94,10 +96,28 @@ fields = [
 
 [[usermsg]]
 name = "Logo"
-channel = "world"
+channel = "hud"
 note = "unused in HL; CS actually reads a byte"
 fields = [
 	{ name = "logoFlags", type = "byte" },
+]
+
+[[usermsg]]
+name = "ResetHUD"
+channel = "hud"
+note = "cstrike writes an empty message here (valve's base definition has one unused byte)"
+fields = []
+
+[[usermsg]]
+name = "VGUIMenu"
+channel = "hud"
+note = "CS ShowVGUIMenu always writes the VGUI-menu header (byte menu, short slots, char time, byte more, string text); the client hook itself only reads the menu id"
+fields = [
+	{ name = "menuID", type = "byte" },
+	{ name = "validSlots", type = "short" },
+	{ name = "displayTime", type = "char", note = "-1" },
+	{ name = "isMore", type = "byte", note = "0" },
+	{ name = "text", type = "string", note = "always a single space" },
 ]
 
 # ------------------------------------------------------------ CS-specific
@@ -254,15 +274,16 @@ fields = [
 [[usermsg]]
 name = "ClCorpse"
 channel = "world"
+note = "MsgFunc_ClCorpse: the three longs are the corpse origin (*1/128), the three coords are the corpse angles"
 fields = [
 	{ name = "model", type = "string" },
-	{ name = "a", type = "long", note = "*1/128" },
-	{ name = "b", type = "long", note = "*1/128" },
-	{ name = "c", type = "long", note = "*1/128" },
-	{ name = "origin", type = "vec3" },
-	{ name = "animBase", type = "long", note = "/100 + client time" },
-	{ name = "pitch", type = "byte" },
-	{ name = "yaw", type = "byte" },
+	{ name = "originX", type = "long", note = "*1/128" },
+	{ name = "originY", type = "long", note = "*1/128" },
+	{ name = "originZ", type = "long", note = "*1/128" },
+	{ name = "angles", type = "vec3", note = "corpse angles (coord*1/8)" },
+	{ name = "animOffset", type = "long", note = "/100 + client time" },
+	{ name = "sequence", type = "byte" },
+	{ name = "body", type = "byte" },
 	{ name = "team", type = "byte", note = "1=T 2=CT" },
 	{ name = "playerIndex", type = "byte" },
 ]
@@ -286,12 +307,12 @@ fields = [
 [[usermsg]]
 name = "Fog"
 channel = "screen"
+note = "MsgFunc_Fog and the server both use exactly 7 bytes: r,g,b then the 4 raw bytes of the density float"
 fields = [
 	{ name = "r", type = "byte" },
 	{ name = "g", type = "byte" },
 	{ name = "b", type = "byte" },
-	{ name = "density", type = "byte", count = 4, note = "4 bytes = 32-bit float bit pattern" },
-	{ name = "enable", type = "byte", note = "0=clear fog" },
+	{ name = "density", type = "byte", count = 4, note = "32-bit float bit pattern, little-endian" },
 ]
 
 [[usermsg]]
@@ -476,5 +497,13 @@ fields = [
 ]
 
 # Registered by cs.so but with no client hook (engine prints "UserMsg: Not
-# Present" and drops them); hooked display-only by the monitor:
-#   CZCareer, Weapon
+# Present" and drops them); hooked display-only by the monitor. "CZCareer"
+# carries a string discriminator (TASKDONE / TASKUNDONE / TASKPART) that the
+# schema cannot branch on, so it stays a hex dump.
+
+[[usermsg]]
+name = "CZCareer"
+channel = "hud"
+note = "raw: string action + type-dependent tail (byte, or byte+short for TASKPART)"
+raw = true
+fields = []

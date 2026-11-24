@@ -1,7 +1,10 @@
 # Sven Co-op (mod dir: svencoop) UserMsg wire formats, build 10257.
 #
 # Transcribed from reverse-engineered svencoop 10257 sources (server.so 87
-# registrations + client.so 86 hooks), with path-sensitive CFG verification.
+# registrations + client.so 86 hooks), with path-sensitive CFG verification,
+# and cross-checked against svencoop_sdk: the wire order and gating come from
+# the server's MESSAGE_BEGIN/WRITE_* code (dlls/, game_shared/) and the field
+# order from the client hook's READ_* code (cl_dll/).
 #
 # Only messages whose wire format differs from Half-Life, plus Sven-specific
 # messages, are defined here; everything else is inherited from valve.toml.
@@ -19,12 +22,12 @@ coord_size = 4    # READ_COORD = long * 1/8 (svencoop usermsg-layer convention)
 [[usermsg]]
 name = "CurWeapon"
 channel = "weapon"
-note = "10257: weapon id and clip widened"
+note = "10257: weapon id widened to short and both clip values to long"
 fields = [
-	{ name = "state", type = "byte" },
+	{ name = "state", type = "byte", note = "WEAPON_STATE_* bits" },
 	{ name = "weaponId", type = "short" },
 	{ name = "clip", type = "long", note = "-1=no magazine" },
-	{ name = "aux", type = "long", note = "unknown 4-byte tail" },
+	{ name = "clip2", type = "long", note = "secondary clip (iClip2)" },
 ]
 
 [[usermsg]]
@@ -44,25 +47,25 @@ fields = [
 	{ name = "ammo1Max", type = "long" },
 	{ name = "ammo2Type", type = "char" },
 	{ name = "ammo2Max", type = "long" },
-	{ name = "bucket", type = "char" },
-	{ name = "bucketPosition", type = "char" },
-	{ name = "slot", type = "short" },
+	{ name = "slot", type = "char", note = "weapon bucket (WEAPON.iSlot)" },
+	{ name = "slotPosition", type = "char", note = "position in bucket (iSlotPos)" },
+	{ name = "weaponId", type = "short", note = "weapon index (iId)" },
 	{ name = "flags", type = "byte" },
 ]
 
 [[usermsg]]
 name = "ScoreInfo"
 channel = "score"
-note = "10257 layout (20 bytes); field semantics past frags not fully identified"
+note = "20 bytes: byte + float + long + float + float + three bytes (WritePlayerScoreFloat writes the 4 raw float bytes)"
 fields = [
 	{ name = "playerIndex", type = "byte" },
 	{ name = "frags", type = "float" },
-	{ name = "v3", type = "long" },
-	{ name = "v4", type = "float" },
-	{ name = "v5", type = "float" },
-	{ name = "v6", type = "byte" },
-	{ name = "v7", type = "byte" },
-	{ name = "v8", type = "byte" },
+	{ name = "deaths", type = "long" },
+	{ name = "health", type = "float", note = "-128 = hidden" },
+	{ name = "armor", type = "float", note = "-128 = hidden" },
+	{ name = "playerClass", type = "byte" },
+	{ name = "showExtras", type = "byte" },
+	{ name = "adminLevel", type = "byte" },
 ]
 
 [[usermsg]]
@@ -99,22 +102,23 @@ fields = [
 [[usermsg]]
 name = "TeamNames"
 channel = "score"
-note = "each team also carries a vector"
+note = "MsgFunc_TeamNames reads a colour vector per team; the only SDK sender (teamplay_gamerules) writes just the names"
 fields = [
 	{ name = "numTeams", type = "byte" },
 	{ name = "team", type = "group", count = "numTeams", fields = [
 		{ name = "teamName", type = "string" },
-		{ name = "vec", type = "vec3" },
+		{ name = "color", type = "vec3" },
 	] },
 ]
 
 [[usermsg]]
 name = "Concuss"
 channel = "status"
+note = "CHud::MsgFunc_Concuss: three floats"
 fields = [
-	{ name = "v1", type = "float" },
-	{ name = "v2", type = "float" },
-	{ name = "v3", type = "float" },
+	{ name = "amplitude", type = "float" },
+	{ name = "frequency", type = "float" },
+	{ name = "fadeTime", type = "float" },
 ]
 
 [[usermsg]]
@@ -167,15 +171,15 @@ fields = [
 [[usermsg]]
 name = "MapList"
 channel = "meta"
-note = "wire-verified on 10257: kind 0 = first page (total + map names), kind 1 = further pages (current, total, names), kind 0x7B ends"
+note = "wire-verified on 10257: kind 0 = reset (total + all map names), kind 1 = batch (first, end + names), kind 0x7B ends"
 fields = [
-	{ name = "kind", type = "byte" },
-	{ name = "page", type = "group", when = { field = "kind", eq = 1 }, fields = [
-		{ name = "current", type = "short" },
-		{ name = "total", type = "short" },
+	{ name = "kind", type = "byte", note = "0=reset 1=batch 0x7B=end" },
+	{ name = "batch", type = "group", when = { field = "kind", eq = 1 }, fields = [
+		{ name = "first", type = "short", note = "index of the first map in this batch" },
+		{ name = "end", type = "short", note = "index one past the last map" },
 		{ name = "mapName", type = "string", count = "*" },
 	] },
-	{ name = "announce", type = "group", when = { field = "kind", eq = 0 }, fields = [
+	{ name = "reset", type = "group", when = { field = "kind", eq = 0 }, fields = [
 		{ name = "total", type = "short" },
 		{ name = "mapName", type = "string", count = "*" },
 	] },
@@ -196,13 +200,12 @@ fields = []
 [[usermsg]]
 name = "VoteMenu"
 channel = "meta"
-note = "question byte + up to 4 option strings"
+note = "CVoteManager writes the vote type, question and the yes/no button labels"
 fields = [
-	{ name = "question", type = "byte" },
-	{ name = "option1", type = "string" },
-	{ name = "option2", type = "string" },
-	{ name = "option3", type = "string" },
-	{ name = "option4", type = "string" },
+	{ name = "type", type = "byte", note = "VOTETYPE" },
+	{ name = "text", type = "string", note = "question" },
+	{ name = "yes", type = "string", note = "empty = #Menu_Yes" },
+	{ name = "no", type = "string", note = "empty = #Menu_No" },
 ]
 
 [[usermsg]]
@@ -224,7 +227,7 @@ name = "ShkFlash"
 channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
-	{ name = "b", type = "byte" },
+	{ name = "impact", type = "byte", note = "1=impact flash, 0=muzzle flash" },
 ]
 
 [[usermsg]]
@@ -232,8 +235,8 @@ name = "CreateBlood"
 channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
-	{ name = "b1", type = "byte" },
-	{ name = "b2", type = "byte" },
+	{ name = "color", type = "byte" },
+	{ name = "scale", type = "byte" },
 ]
 
 [[usermsg]]
@@ -249,8 +252,8 @@ fields = [
 name = "SporeTrail"
 channel = "world"
 fields = [
-	{ name = "v1", type = "short" },
-	{ name = "b", type = "byte" },
+	{ name = "entity", type = "short" },
+	{ name = "enabled", type = "byte" },
 ]
 
 [[usermsg]]
@@ -259,8 +262,8 @@ channel = "world"
 fields = [
 	{ name = "start", type = "vec3" },
 	{ name = "end", type = "vec3" },
-	{ name = "b1", type = "byte" },
-	{ name = "b2", type = "byte" },
+	{ name = "tracerCount", type = "byte" },
+	{ name = "unused", type = "byte" },
 ]
 
 [[usermsg]]
@@ -268,22 +271,22 @@ name = "SRDetonate"
 channel = "world"
 fields = [
 	{ name = "origin", type = "vec3" },
-	{ name = "b", type = "byte" },
+	{ name = "charge", type = "byte" },
 ]
 
 [[usermsg]]
 name = "SRPrimed"
 channel = "world"
 fields = [
-	{ name = "b", type = "byte" },
-	{ name = "f", type = "float" },
+	{ name = "entity", type = "byte", note = "SRPRIMED_ENTITY_MASK" },
+	{ name = "startTime", type = "float" },
 ]
 
 [[usermsg]]
 name = "SRPrimedOff"
 channel = "world"
 fields = [
-	{ name = "b", type = "byte" },
+	{ name = "entity", type = "byte", note = "SRPRIMED_ENTITY_MASK" },
 ]
 
 [[usermsg]]
@@ -317,28 +320,28 @@ fields = [
 [[usermsg]]
 name = "WeatherFX"
 channel = "world"
-note = "68-byte fixed layout"
+note = "68-byte fixed layout: MsgFunc_WeatherFX (area mins/maxs/angles, model, splash and render settings)"
 fields = [
-	{ name = "type", type = "short" },
-	{ name = "pos1", type = "vec3" },
-	{ name = "pos2", type = "vec3" },
+	{ name = "weatherId", type = "short" },
+	{ name = "mins", type = "vec3" },
+	{ name = "maxs", type = "vec3" },
 	{ name = "angles", type = "angle", count = 3 },
-	{ name = "s1", type = "short" },
-	{ name = "f1", type = "float" },
-	{ name = "b1", type = "byte" },
-	{ name = "s2", type = "short" },
-	{ name = "f2", type = "float" },
-	{ name = "b2", type = "byte" },
-	{ name = "b3", type = "byte" },
-	{ name = "f3", type = "float" },
-	{ name = "b4", type = "byte" },
-	{ name = "b5", type = "byte" },
-	{ name = "b6", type = "byte" },
-	{ name = "b7", type = "byte" },
-	{ name = "f4", type = "float" },
-	{ name = "f5", type = "float" },
-	{ name = "f6", type = "float" },
-	{ name = "f7", type = "float" },
+	{ name = "model", type = "short" },
+	{ name = "scale", type = "float" },
+	{ name = "vpType", type = "byte" },
+	{ name = "splashModel", type = "short" },
+	{ name = "splashScale", type = "float" },
+	{ name = "splashVpType", type = "byte" },
+	{ name = "renderMode", type = "byte" },
+	{ name = "renderAmt", type = "float" },
+	{ name = "renderColorR", type = "byte" },
+	{ name = "renderColorG", type = "byte" },
+	{ name = "renderColorB", type = "byte" },
+	{ name = "renderFx", type = "byte" },
+	{ name = "frequency", type = "float" },
+	{ name = "speed", type = "float" },
+	{ name = "angleVariance", type = "float" },
+	{ name = "speedVariance", type = "float" },
 ]
 
 [[usermsg]]
@@ -352,44 +355,51 @@ fields = [
 [[usermsg]]
 name = "Fog"
 channel = "screen"
+note = "env_fog: id, active, origin/radius, colour and start/end distance"
 fields = [
-	{ name = "v1", type = "short" },
-	{ name = "b1", type = "byte" },
-	{ name = "vec1", type = "vec3" },
-	{ name = "v2", type = "short" },
-	{ name = "b2", type = "byte" },
-	{ name = "b3", type = "byte" },
-	{ name = "b4", type = "byte" },
-	{ name = "v3", type = "short" },
-	{ name = "v4", type = "short" },
+	{ name = "id", type = "short" },
+	{ name = "active", type = "byte" },
+	{ name = "origin", type = "vec3" },
+	{ name = "radius", type = "short" },
+	{ name = "r", type = "byte" },
+	{ name = "g", type = "byte" },
+	{ name = "b", type = "byte" },
+	{ name = "startDist", type = "short" },
+	{ name = "endDist", type = "short" },
 ]
 
 [[usermsg]]
 name = "PrtlUpdt"
 channel = "world"
-note = "10257 expanded layout (75-byte union); linear read order listed by the RE docs"
+note = "CPortal::UpdateClient / MsgFunc_PrtlUpdt: flat state, then mode-gated source, monitor size and portal plane flags; textureMode 2 appends the texture name"
 fields = [
-	{ name = "v1", type = "long" },
-	{ name = "b1", type = "byte" },
-	{ name = "vec1", type = "vec3" },
-	{ name = "vec2", type = "vec3" },
-	{ name = "b2", type = "byte" },
-	{ name = "b3", type = "byte" },
-	{ name = "f1", type = "float" },
-	{ name = "b4", type = "byte" },
-	{ name = "l1", type = "long" },
-	{ name = "l2", type = "long" },
-	{ name = "b5", type = "byte" },
-	{ name = "s1", type = "string" },
-	{ name = "b6", type = "byte" },
-	{ name = "b7", type = "byte" },
-	{ name = "b8", type = "byte" },
-	{ name = "b9", type = "byte" },
-	{ name = "l3", type = "long" },
-	{ name = "vec3", type = "vec3" },
-	{ name = "v2", type = "short" },
-	{ name = "l4", type = "long" },
-	{ name = "l5", type = "long" },
+	{ name = "entityIndex", type = "long" },
+	{ name = "active", type = "byte" },
+	{ name = "state", type = "group", when = { field = "active", ne = 0 }, fields = [
+		{ name = "origin", type = "vec3", note = "long*1/8" },
+		{ name = "angles", type = "vec3", note = "long*1/8" },
+		{ name = "mode", type = "byte", note = "0=mirror 1=monitor 2=portal" },
+		{ name = "textureMode", type = "byte", note = "0=transparent 1=all 2=named" },
+		{ name = "zoom", type = "float" },
+		{ name = "fps", type = "byte" },
+		{ name = "minDistance", type = "long" },
+		{ name = "maxDistance", type = "long" },
+		{ name = "halfFrame", type = "byte" },
+		{ name = "hasSource", type = "byte", when = { field = "mode", ne = 0 } },
+		{ name = "source", type = "group", when = { field = "hasSource", eq = 1 }, fields = [
+			{ name = "entityIndex", type = "long" },
+			{ name = "origin", type = "vec3" },
+			{ name = "angles", type = "angle", count = 3, note = "byte*360/256" },
+		] },
+		{ name = "hasCustomSize", type = "byte", when = { field = "mode", eq = 1 } },
+		{ name = "size", type = "group", when = { field = "hasCustomSize", eq = 1 }, fields = [
+			{ name = "width", type = "long" },
+			{ name = "height", type = "long" },
+		] },
+		{ name = "noPlanes", type = "byte", when = { field = "mode", eq = 2 } },
+		{ name = "shootThrough", type = "byte", when = { field = "mode", eq = 2 } },
+		{ name = "textureName", type = "string", when = { field = "textureMode", eq = 2 } },
+	] },
 ]
 
 [[usermsg]]
@@ -400,14 +410,29 @@ fields = [
 ]
 
 [[usermsg]]
+name = "NotifyText"
+channel = "text"
+note = "CHudNotifyText::MsgFunc_NotifyText (client-side; no server sender in the SDK)"
+fields = [
+	{ name = "client", type = "byte" },
+	{ name = "text", type = "string" },
+]
+
+[[usermsg]]
 name = "InvAdd"
 channel = "weapon"
+note = "item_inventory.cpp: id, three flags, the weight float bytes, then five strings"
 fields = [
 	{ name = "itemId", type = "long" },
-	{ name = "b1", type = "byte" },
-	{ name = "b2", type = "byte" },
-	{ name = "b3", type = "byte" },
-	{ name = "f1", type = "float" },
+	{ name = "canActivate", type = "byte" },
+	{ name = "canDrop", type = "byte" },
+	{ name = "keepOnRespawn", type = "byte" },
+	{ name = "weight", type = "float" },
+	{ name = "name", type = "string" },
+	{ name = "displayName", type = "string" },
+	{ name = "description", type = "string" },
+	{ name = "target", type = "string", note = "pev->model" },
+	{ name = "icon", type = "string" },
 ]
 
 [[usermsg]]
@@ -435,6 +460,14 @@ fields = [
 ]
 
 [[usermsg]]
+name = "OnTank"
+channel = "weapon"
+note = "controls whether the local player rides a func_tank (client-only; no server sender in the SDK)"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
 name = "WeaponSpr"
 channel = "weapon"
 fields = [
@@ -446,84 +479,138 @@ fields = [
 name = "ToggleElem"
 channel = "hud"
 fields = [
-	{ name = "b1", type = "byte" },
-	{ name = "b2", type = "byte" },
+	{ name = "channel", type = "byte" },
+	{ name = "visible", type = "byte" },
 ]
 
 [[usermsg]]
 name = "CustSpr"
 channel = "hud"
-note = "10257 layout"
+note = "UTIL_HudCustomSprite: sprite element; rect is left/top bytes + width/height shorts and the two colours are RGBA quads"
 fields = [
-	{ name = "b1", type = "byte" },
-	{ name = "l1", type = "long" },
-	{ name = "s1", type = "string" },
-	{ name = "f1", type = "float" },
-	{ name = "f2", type = "float" },
-	{ name = "b2", type = "byte" },
-	{ name = "b3", type = "byte" },
-	{ name = "f3", type = "float" },
-	{ name = "f4", type = "float" },
-	{ name = "f5", type = "float" },
-	{ name = "f6", type = "float" },
-	{ name = "f7", type = "float" },
-	{ name = "b4", type = "byte" },
+	{ name = "channel", type = "byte" },
+	{ name = "flags", type = "long" },
+	{ name = "sprite", type = "string" },
+	{ name = "rect", type = "group", fields = [
+		{ name = "left", type = "byte" },
+		{ name = "top", type = "byte" },
+		{ name = "width", type = "short" },
+		{ name = "height", type = "short" },
+	] },
+	{ name = "x", type = "float" },
+	{ name = "y", type = "float" },
+	{ name = "color", type = "group", fields = [
+		{ name = "r", type = "byte" },
+		{ name = "g", type = "byte" },
+		{ name = "b", type = "byte" },
+		{ name = "a", type = "byte" },
+	] },
+	{ name = "color2", type = "group", fields = [
+		{ name = "r", type = "byte" },
+		{ name = "g", type = "byte" },
+		{ name = "b", type = "byte" },
+		{ name = "a", type = "byte" },
+	] },
+	{ name = "startFrame", type = "byte" },
+	{ name = "numFrames", type = "byte" },
+	{ name = "frameRate", type = "float" },
+	{ name = "fadeIn", type = "float" },
+	{ name = "fadeOut", type = "float" },
+	{ name = "holdTime", type = "float" },
+	{ name = "fxTime", type = "float" },
+	{ name = "effect", type = "byte" },
 ]
 
 [[usermsg]]
 name = "NumDisplay"
 channel = "hud"
-note = "10257 layout"
+note = "UTIL_HudNumDisplay: number element (value, digit range, colours, sprite rect, fade timing)"
 fields = [
-	{ name = "b1", type = "byte" },
-	{ name = "l1", type = "long" },
-	{ name = "f1", type = "float" },
-	{ name = "b2", type = "byte" },
-	{ name = "b3", type = "byte" },
-	{ name = "f2", type = "float" },
-	{ name = "f3", type = "float" },
-	{ name = "s1", type = "string" },
-	{ name = "f4", type = "float" },
-	{ name = "f5", type = "float" },
-	{ name = "f6", type = "float" },
-	{ name = "f7", type = "float" },
-	{ name = "b4", type = "byte" },
+	{ name = "channel", type = "byte" },
+	{ name = "flags", type = "long" },
+	{ name = "value", type = "float" },
+	{ name = "minDigits", type = "byte" },
+	{ name = "maxDigits", type = "byte" },
+	{ name = "x", type = "float" },
+	{ name = "y", type = "float" },
+	{ name = "color", type = "group", fields = [
+		{ name = "r", type = "byte" },
+		{ name = "g", type = "byte" },
+		{ name = "b", type = "byte" },
+		{ name = "a", type = "byte" },
+	] },
+	{ name = "color2", type = "group", fields = [
+		{ name = "r", type = "byte" },
+		{ name = "g", type = "byte" },
+		{ name = "b", type = "byte" },
+		{ name = "a", type = "byte" },
+	] },
+	{ name = "sprite", type = "string" },
+	{ name = "rect", type = "group", fields = [
+		{ name = "left", type = "byte" },
+		{ name = "top", type = "byte" },
+		{ name = "width", type = "short" },
+		{ name = "height", type = "short" },
+	] },
+	{ name = "fadeIn", type = "float" },
+	{ name = "fadeOut", type = "float" },
+	{ name = "holdTime", type = "float" },
+	{ name = "fxTime", type = "float" },
+	{ name = "effect", type = "byte" },
 ]
 
 [[usermsg]]
 name = "UpdateNum"
 channel = "hud"
 fields = [
-	{ name = "b", type = "byte" },
-	{ name = "f", type = "float" },
+	{ name = "channel", type = "byte" },
+	{ name = "value", type = "float" },
 ]
 
 [[usermsg]]
 name = "TimeDisplay"
 channel = "hud"
-note = "10257 layout"
+note = "UTIL_HudTimeDisplay: same element as NumDisplay plus the server time float before the value"
 fields = [
-	{ name = "b1", type = "byte" },
-	{ name = "l1", type = "long" },
-	{ name = "f1", type = "float" },
-	{ name = "f2", type = "float" },
-	{ name = "f3", type = "float" },
-	{ name = "f4", type = "float" },
-	{ name = "s1", type = "string" },
-	{ name = "f5", type = "float" },
-	{ name = "f6", type = "float" },
-	{ name = "f7", type = "float" },
-	{ name = "f8", type = "float" },
-	{ name = "b2", type = "byte" },
+	{ name = "channel", type = "byte" },
+	{ name = "flags", type = "long" },
+	{ name = "serverTime", type = "float" },
+	{ name = "value", type = "float" },
+	{ name = "x", type = "float" },
+	{ name = "y", type = "float" },
+	{ name = "color", type = "group", fields = [
+		{ name = "r", type = "byte" },
+		{ name = "g", type = "byte" },
+		{ name = "b", type = "byte" },
+		{ name = "a", type = "byte" },
+	] },
+	{ name = "color2", type = "group", fields = [
+		{ name = "r", type = "byte" },
+		{ name = "g", type = "byte" },
+		{ name = "b", type = "byte" },
+		{ name = "a", type = "byte" },
+	] },
+	{ name = "sprite", type = "string" },
+	{ name = "rect", type = "group", fields = [
+		{ name = "left", type = "byte" },
+		{ name = "top", type = "byte" },
+		{ name = "width", type = "short" },
+		{ name = "height", type = "short" },
+	] },
+	{ name = "fadeIn", type = "float" },
+	{ name = "fadeOut", type = "float" },
+	{ name = "holdTime", type = "float" },
+	{ name = "fxTime", type = "float" },
+	{ name = "effect", type = "byte" },
 ]
 
 [[usermsg]]
 name = "UpdateTime"
 channel = "hud"
 fields = [
-	{ name = "b", type = "byte" },
-	{ name = "f1", type = "float" },
-	{ name = "f2", type = "float" },
+	{ name = "channel", type = "byte" },
+	{ name = "serverTime", type = "float" },
+	{ name = "value", type = "float" },
 ]
 
 [[usermsg]]
@@ -545,24 +632,56 @@ fields = [
 [[usermsg]]
 name = "ClServerInfo"
 channel = "meta"
+note = "CServerState::SendAuthInfo: player slot, engine user id and auth id"
 fields = [
-	{ name = "b", type = "byte" },
-	{ name = "l", type = "long" },
-	{ name = "s", type = "string" },
+	{ name = "clientIndex", type = "byte" },
+	{ name = "userId", type = "long" },
+	{ name = "authId", type = "string" },
+]
+
+[[usermsg]]
+name = "ClExtrasInfo"
+channel = "meta"
+note = "complete CryptoPP frame (CClientCrypto::ReadCryptData / CServerCrypto::WriteCryptData): plain length, IV, encrypted payload and encrypted digest, each variable part length-prefixed; the plaintext (player, auth id, quoted name, quoted description, level) stays encrypted on the wire"
+fields = [
+	{ name = "plainLength", type = "long", note = "plaintext byte count (server buffer is 220)" },
+	{ name = "ivLength", type = "long", note = "AES-GCM IV length" },
+	{ name = "iv", type = "byte", count = "ivLength" },
+	{ name = "encryptedDataLength", type = "long", note = "ciphertext + 12-byte GCM tag" },
+	{ name = "encryptedData", type = "byte", count = "encryptedDataLength", note = "AES-GCM ciphertext + tag" },
+	{ name = "encryptedDigestLength", type = "long", note = "SHA-256 digest size (32)" },
+	{ name = "encryptedDigest", type = "byte", count = "encryptedDigestLength", note = "SHA-256 of the ciphertext" },
 ]
 
 [[usermsg]]
 name = "TE_CUSTOM"
 channel = "world"
-note = "subtype switch"
+note = "subtype switch; type 1 also gates the offset vector on target > 0, type 2 is the XenMaker effect payload"
 fields = [
-	{ name = "subtype", type = "byte" },
-	{ name = "type1", type = "group", when = { field = "subtype", eq = 1 }, fields = [
-		{ name = "s1", type = "short" },
-		{ name = "s2", type = "short" },
-		{ name = "vec", type = "vec3" },
+	{ name = "subtype", type = "byte", note = "1=HWGRUNT_FIRE 2=XEN_PORTAL 3=GILDED_UZI" },
+	{ name = "hwgrunt", type = "group", when = { field = "subtype", eq = 1 }, fields = [
+		{ name = "entityIndex", type = "short" },
+		{ name = "target", type = "short" },
+		{ name = "offset", type = "vec3", when = { field = "target", ne = 0 } },
 	] },
-	{ name = "b", type = "byte", when = { field = "subtype", eq = 3 } },
+	{ name = "xenPortal", type = "group", when = { field = "subtype", eq = 2 }, fields = [
+		{ name = "origin", type = "vec3" },
+		{ name = "beamCount", type = "byte" },
+		{ name = "beamColor", type = "vec3" },
+		{ name = "beamAlpha", type = "byte" },
+		{ name = "beamRadius", type = "coord" },
+		{ name = "lightColor", type = "vec3" },
+		{ name = "lightRadius", type = "coord" },
+		{ name = "startSpriteColor", type = "vec3" },
+		{ name = "startSpriteScale", type = "byte", note = "scale*10" },
+		{ name = "startSpriteFramerate", type = "byte" },
+		{ name = "startSpriteAlpha", type = "byte" },
+		{ name = "endSpriteColor", type = "vec3" },
+		{ name = "endSpriteScale", type = "byte", note = "scale*10" },
+		{ name = "endSpriteFramerate", type = "byte" },
+		{ name = "endSpriteAlpha", type = "byte" },
+	] },
+	{ name = "gildedUzi", type = "byte", when = { field = "subtype", eq = 3 } },
 ]
 
 [[usermsg]]
@@ -589,30 +708,45 @@ fields = [
 	{ name = "a", type = "byte" },
 ]
 
-# ------------------------------------------------- branch/loop driven (raw)
-
-# These messages read flags- or subtype-driven variable payloads that the RE
-# docs did not reduce to a single linear order; they are displayed as a hex
-# dump. Encodable variants (TE_CUSTOM above) already are.
+# ------------------------------------------------------------ game effects
 
 [[usermsg]]
 name = "Gib"
 channel = "world"
-note = "raw: type-driven, each type reads 6 coords"
-raw = true
-fields = []
+note = "EV_Message_Gib: type then origin and velocity coords; every type the server sends reads both vectors"
+fields = [
+	{ name = "type", type = "byte", note = "0=human 1=human_random 2=alien_random 4=sticky" },
+	{ name = "origin", type = "vec3" },
+	{ name = "velocity", type = "vec3" },
+]
+
+[[usermsg]]
+name = "DeathMsg"
+channel = "score"
+note = "MsgFunc_DeathMsg reads killer, victim and the weapon/inflictor name (teamplay_gamerules sends byte byte string)"
+fields = [
+	{ name = "killer", type = "byte" },
+	{ name = "victim", type = "byte" },
+	{ name = "weapon", type = "string" },
+]
+
+# -------------------------------------------------- flags-driven (raw)
+
+# StartSound and RampSprite gate every optional field on individual bits of
+# the leading flags word, which the schema's eq/ne "when" tests cannot
+# express; they are kept as hex dumps.
 
 [[usermsg]]
 name = "StartSound"
 channel = "world"
-note = "raw: flags bit-driven"
+note = "raw: flags bit-driven (entity/volume/pitch/attenuation/origin/offset...)"
 raw = true
 fields = []
 
 [[usermsg]]
 name = "RampSprite"
 channel = "world"
-note = "raw: 6 flag variants, trailing byte count 0-7"
+note = "raw: flags bit-driven (angle/scale/alpha/render/colour/frame/velocity/rates)"
 raw = true
 fields = []
 
@@ -638,19 +772,5 @@ fields = []
 name = "ASScriptName"
 channel = "meta"
 note = "raw: no client hook"
-raw = true
-fields = []
-
-[[usermsg]]
-name = "DeathMsg"
-channel = "score"
-note = "raw: server registers/sends it but 10257 client has no MsgFunc"
-raw = true
-fields = []
-
-[[usermsg]]
-name = "ClExtrasInfo"
-channel = "meta"
-note = "raw: CryptoPP-encrypted frame (only the header is readable)"
 raw = true
 fields = []
