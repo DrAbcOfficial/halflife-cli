@@ -1,0 +1,106 @@
+# Deathmatch Classic (mod dir: dmc) UserMsg wire formats.
+#
+# Derived from GoldSrc-SDK dmc/cl_dll and dmc/dlls: the wire order and gating
+# come from the server MESSAGE_BEGIN/WRITE_* sites, the field order from the
+# client MsgFunc_*/READ_* handlers. Everything not listed here is identical
+# to Half-Life and inherited from valve.toml.
+
+extends = "valve.toml"
+
+# ------------------------------------------------------------- wire differs
+
+[[usermsg]]
+name = "CurWeapon"
+channel = "weapon"
+note = "DMC stores the weapon id as an unsigned byte"
+fields = [
+	{ name = "state", type = "byte" },
+	{ name = "weaponId", type = "byte" },
+	{ name = "clip", type = "char", note = "-1=no magazine" },
+]
+
+[[usermsg]]
+name = "WeaponList"
+channel = "weapon"
+note = "DMC layout: 7 bytes, then the weapon id is a long (bit index into pev->weapons)"
+fields = [
+	{ name = "name", type = "string" },
+	{ name = "ammo1Type", type = "char", note = "-1=none" },
+	{ name = "ammo1Max", type = "byte", note = "255=-1" },
+	{ name = "ammo2Type", type = "char" },
+	{ name = "ammo2Max", type = "byte" },
+	{ name = "slot", type = "byte" },
+	{ name = "slotPosition", type = "byte" },
+	{ name = "weaponId", type = "long" },
+	{ name = "flags", type = "byte" },
+]
+
+[[usermsg]]
+name = "ScoreInfo"
+channel = "score"
+note = "server writes player + frags, deaths and team; the client scoreboard over-reads two more shorts"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "frags", type = "short" },
+	{ name = "deaths", type = "short" },
+	{ name = "teamNumber", type = "short" },
+]
+
+[[usermsg]]
+name = "InitHUD"
+channel = "hud"
+note = "teleporter bounds (numTeles x mins/maxs) followed by five fog shorts; the fog block is only present when the map has an env_fog, so it is read to the end of the buffer"
+fields = [
+	{ name = "numTeles", type = "byte" },
+	{ name = "tele", type = "group", count = "numTeles", fields = [
+		{ name = "mins", type = "vec3" },
+		{ name = "maxs", type = "vec3" },
+	] },
+	{ name = "fog", type = "short", count = "*", note = "r,g,b,startDist,endDist; absent without env_fog" },
+]
+
+# ------------------------------------------------------------ DMC-specific
+
+[[usermsg]]
+name = "QItems"
+channel = "score"
+note = "Quake item bitfield"
+fields = [
+	{ name = "items", type = "long" },
+]
+
+[[usermsg]]
+name = "Bonus"
+channel = "text"
+note = "CTF bonus pickup banner"
+fields = [
+	{ name = "type", type = "byte", note = "RED_FLAG_STOLEN / BLUE_FLAG_STOLEN / ..." },
+	{ name = "playerName", type = "string" },
+]
+
+[[usermsg]]
+name = "FlagCarrier"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "hasFlag", type = "byte" },
+]
+
+[[usermsg]]
+name = "FlagStat"
+channel = "score"
+note = "two flag states plus the two team scores"
+fields = [
+	{ name = "drawStatus", type = "byte" },
+	{ name = "redFlagStatus", type = "byte" },
+	{ name = "blueFlagStatus", type = "byte" },
+	{ name = "redTeamScore", type = "byte" },
+	{ name = "blueTeamScore", type = "byte" },
+]
+
+[[usermsg]]
+name = "RuneStat"
+channel = "status"
+fields = [
+	{ name = "runeStat", type = "byte" },
+]

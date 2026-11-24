@@ -1,0 +1,48 @@
+# Ricochet (mod dir: ricochet) UserMsg wire formats.
+#
+# Derived from GoldSrc-SDK ricochet/cl_dll and ricochet/dlls. The disc-arena
+# round messages have no client hook and carry count-prefixed player lists
+# with optional holes, so they stay raw. Everything else is inherited from
+# valve.toml.
+
+extends = "valve.toml"
+
+[[usermsg]]
+name = "Frozen"
+channel = "status"
+fields = [
+	{ name = "frozen", type = "byte" },
+]
+
+[[usermsg]]
+name = "Powerup"
+channel = "status"
+fields = [
+	{ name = "powerup", type = "byte" },
+]
+
+[[usermsg]]
+name = "Reward"
+channel = "hud"
+fields = [
+	{ name = "reward", type = "short" },
+]
+
+# ------------------------------------------- registered, no client hook (raw)
+# StartRnd/EndRnd are server-side disc-arena bookkeeping. EndRnd interleaves
+# winner lists and score bytes behind byte counters, which the schema cannot
+# branch on, so both are displayed as hex.
+
+[[usermsg]]
+name = "StartRnd"
+channel = "hud"
+note = "raw: round, seconds and a null-terminated combatant index list"
+raw = true
+fields = []
+
+[[usermsg]]
+name = "EndRnd"
+channel = "hud"
+note = "raw: round result with winner/leader index lists and scores"
+raw = true
+fields = []

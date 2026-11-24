@@ -1,0 +1,201 @@
+# Half-Life: Opposing Force (mod dir: gearbox) UserMsg wire formats.
+#
+# Derived from GoldSrc-SDK gearbox/cl_dll and gearbox/dlls: the wire order and
+# gating come from the server MESSAGE_BEGIN/WRITE_* sites, the field order
+# from the client MsgFunc_*/READ_* handlers. Messages that match Half-Life are
+# inherited from valve.toml.
+
+extends = "valve.toml"
+
+# ------------------------------------------------------------- wire differs
+
+[[usermsg]]
+name = "ScoreInfo"
+channel = "score"
+note = "OpFor writes player + frags + deaths only (5 bytes); the CS-style client scoreboard over-reads a longer layout"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "frags", type = "short" },
+	{ name = "deaths", type = "short" },
+]
+
+# ---------------------------------------------------------- OpFor-specific
+
+[[usermsg]]
+name = "CTFScore"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "ctfScore", type = "byte" },
+]
+
+[[usermsg]]
+name = "CustomIcon"
+channel = "hud"
+note = "custom status icon: enable, slot, then (when enabled) name/colour/rect"
+fields = [
+	{ name = "enable", type = "byte" },
+	{ name = "index", type = "byte" },
+	{ name = "info", type = "group", when = { field = "enable", ne = 0 }, fields = [
+		{ name = "name", type = "string" },
+		{ name = "r", type = "byte" },
+		{ name = "g", type = "byte" },
+		{ name = "b", type = "byte" },
+		{ name = "left", type = "byte" },
+		{ name = "top", type = "byte" },
+		{ name = "right", type = "byte" },
+		{ name = "bottom", type = "byte" },
+	] },
+]
+
+[[usermsg]]
+name = "FlagIcon"
+channel = "hud"
+note = "CTF flag status icon; colour/score follow only when enabled"
+fields = [
+	{ name = "enable", type = "byte" },
+	{ name = "name", type = "string" },
+	{ name = "team", type = "byte" },
+	{ name = "info", type = "group", when = { field = "enable", ne = 0 }, fields = [
+		{ name = "r", type = "byte" },
+		{ name = "g", type = "byte" },
+		{ name = "b", type = "byte" },
+		{ name = "score", type = "byte" },
+	] },
+]
+
+[[usermsg]]
+name = "FlagTimer"
+channel = "hud"
+fields = [
+	{ name = "isTimer", type = "byte" },
+	{ name = "timeLeft", type = "short", when = { field = "isTimer", ne = 0 } },
+]
+
+[[usermsg]]
+name = "HudColor"
+channel = "hud"
+fields = [
+	{ name = "r", type = "byte" },
+	{ name = "g", type = "byte" },
+	{ name = "b", type = "byte" },
+]
+
+[[usermsg]]
+name = "OldWeapon"
+channel = "weapon"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "PlayerIcon"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "enable", type = "byte" },
+	{ name = "index", type = "byte" },
+	{ name = "flags", type = "byte" },
+]
+
+[[usermsg]]
+name = "PlyrBrowse"
+channel = "score"
+note = "player browse card (client hook; no server sender in the SDK)"
+fields = [
+	{ name = "friendly", type = "byte" },
+	{ name = "team", type = "byte" },
+	{ name = "name", type = "string" },
+	{ name = "powerups", type = "byte" },
+	{ name = "health", type = "byte" },
+	{ name = "armor", type = "byte" },
+]
+
+[[usermsg]]
+name = "SetMenuTeam"
+channel = "hud"
+fields = [
+	{ name = "team", type = "byte" },
+]
+
+[[usermsg]]
+name = "StatsInfo"
+channel = "score"
+note = "stat board chunk 0 carries 7 name/short pairs, chunk 1 carries 8"
+fields = [
+	{ name = "team", type = "byte" },
+	{ name = "winningTeam", type = "byte" },
+	{ name = "numPlayers", type = "byte" },
+	{ name = "chunk", type = "byte" },
+	{ name = "chunk0", type = "group", when = { field = "chunk", eq = 0 }, fields = [
+		{ name = "mvpName", type = "string" },
+		{ name = "mvpValue", type = "short" },
+		{ name = "mostKillsName", type = "string" },
+		{ name = "mostKillsValue", type = "short" },
+		{ name = "mostCtfName", type = "string" },
+		{ name = "mostCtfValue", type = "short" },
+		{ name = "mostOffName", type = "string" },
+		{ name = "mostOffValue", type = "short" },
+		{ name = "mostDefName", type = "string" },
+		{ name = "mostDefValue", type = "short" },
+		{ name = "mostSnipeName", type = "string" },
+		{ name = "mostSnipeValue", type = "short" },
+		{ name = "mostBarnacleName", type = "string" },
+		{ name = "mostBarnacleValue", type = "short" },
+	] },
+	{ name = "chunk1", type = "group", when = { field = "chunk", eq = 1 }, fields = [
+		{ name = "mostDeathsName", type = "string" },
+		{ name = "mostDeathsValue", type = "short" },
+		{ name = "mostSuicidesName", type = "string" },
+		{ name = "mostSuicidesValue", type = "short" },
+		{ name = "mostDamageName", type = "string" },
+		{ name = "mostDamageValue", type = "short" },
+		{ name = "mostAccelName", type = "string" },
+		{ name = "mostAccelValue", type = "short" },
+		{ name = "mostBackpackName", type = "string" },
+		{ name = "mostBackpackValue", type = "short" },
+		{ name = "mostHealthName", type = "string" },
+		{ name = "mostHealthValue", type = "short" },
+		{ name = "mostShieldName", type = "string" },
+		{ name = "mostShieldValue", type = "short" },
+		{ name = "mostJumpName", type = "string" },
+		{ name = "mostJumpValue", type = "short" },
+	] },
+]
+
+[[usermsg]]
+name = "StatsPlayer"
+channel = "score"
+note = "one player's CTF stat row (entindex + 15 shorts)"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "score", type = "short" },
+	{ name = "frags", type = "short" },
+	{ name = "ctfScore", type = "short" },
+	{ name = "offense", type = "short" },
+	{ name = "defense", type = "short" },
+	{ name = "snipeKills", type = "short" },
+	{ name = "barnacleKills", type = "short" },
+	{ name = "deaths", type = "short" },
+	{ name = "suicides", type = "short" },
+	{ name = "mostDamage", type = "short" },
+	{ name = "accelTime", type = "short" },
+	{ name = "backpackTime", type = "short" },
+	{ name = "healthTime", type = "short" },
+	{ name = "shieldTime", type = "short" },
+	{ name = "jumpTime", type = "short" },
+]
+
+[[usermsg]]
+name = "TeamFull"
+channel = "score"
+fields = [
+	{ name = "full", type = "byte" },
+]
+
+[[usermsg]]
+name = "HudTextPro"
+channel = "text"
+note = "raw: registered by this mod's server but never hooked or sent in the SDK; bshift and cstrike define the readable variants"
+raw = true
+fields = []

@@ -1,0 +1,8 @@
+# Counter-Strike: Condition Zero (mod dir: czero) UserMsg wire formats.
+#
+# GoldSrc-SDK builds czero's client from the same cstrike sources
+# (projects/vs2026/czero_cdll.vcxproj imports cstrike-client.items; there is no
+# separate czero source tree), so the wire formats are identical to Counter-
+# Strike 1.x and inherited wholesale from cstrike.toml.
+
+extends = "cstrike.toml"

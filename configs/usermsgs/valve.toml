@@ -445,3 +445,14 @@ name = "ReqState"
 channel = "meta"
 note = "HLTV spectating state request"
 fields = []
+
+# ---------------------------------------- registered, no client hook (raw)
+# Every HL-family server registers SelAmmo, but none of the SDK sources write
+# it and the client never hooks it, so its four bytes stay opaque.
+
+[[usermsg]]
+name = "SelAmmo"
+channel = "weapon"
+note = "raw: registered (4 bytes), never sent or hooked in the SDK"
+raw = true
+fields = []

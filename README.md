@@ -467,7 +467,11 @@ changing maps, which re-runs the load — re-enables it.
 Schemas live in `svencoop\metahook\configs\halflifecli\usermsgs\<gamedir>.toml`
 (`configs/usermsgs/` in the repo, installed by `install_plugin.bat`). One file
 per `-game` folder: `valve.toml` (Half-Life), `cstrike.toml`,
-`svencoop.toml`. A file may inherit a base with
+`czero.toml` (Condition Zero), `czeror.toml` (CZ: Deleted Scenes),
+`bshift.toml` (Blue Shift), `gearbox.toml` (Opposing Force), `tfc.toml`,
+`dod.toml`, `dmc.toml`, `ricochet.toml` and `svencoop.toml`. Each of the
+GoldSrc-SDK mods is derived from the mod's client read order and server write
+order; a file may inherit a base with
 `extends = "valve.toml"` and then only define messages whose wire format
 differs. Field syntax:
 

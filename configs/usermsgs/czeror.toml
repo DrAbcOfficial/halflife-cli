@@ -1,0 +1,250 @@
+# Counter-Strike: Condition Zero - Deleted Scenes (mod dir: czeror) UserMsg
+# wire formats.
+#
+# Derived from GoldSrc-SDK czeror/cl_dll and czeror/dlls: the wire order and
+# gating come from the server MESSAGE_BEGIN/WRITE_* sites, the field order
+# from the client MsgFunc_*/READ_* handlers. Deleted Scenes is CS-derived but
+# has its own single-player HUD, so it extends valve.toml and overrides the
+# handful of messages whose layout it changed.
+
+extends = "valve.toml"
+
+# ------------------------------------------------------------- wire differs
+
+[[usermsg]]
+name = "CurWeapon"
+channel = "weapon"
+note = "Deleted Scenes adds the accessory flag byte"
+fields = [
+	{ name = "state", type = "byte" },
+	{ name = "weaponId", type = "char" },
+	{ name = "clip", type = "char", note = "-1=no magazine" },
+	{ name = "accessory", type = "byte" },
+]
+
+[[usermsg]]
+name = "WeapPickup"
+channel = "weapon"
+note = "Deleted Scenes adds the accessory flag byte"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "accessory", type = "byte" },
+]
+
+[[usermsg]]
+name = "WeaponList"
+channel = "weapon"
+note = "Deleted Scenes layout: slot/slotPos/id/accessory are four chars before the flags byte"
+fields = [
+	{ name = "name", type = "string" },
+	{ name = "ammo1Type", type = "char", note = "-1=none" },
+	{ name = "ammo1Max", type = "byte", note = "255=-1" },
+	{ name = "ammo2Type", type = "char" },
+	{ name = "ammo2Max", type = "byte" },
+	{ name = "slot", type = "char" },
+	{ name = "slotPosition", type = "char" },
+	{ name = "weaponId", type = "char" },
+	{ name = "accessory", type = "char" },
+	{ name = "flags", type = "byte" },
+]
+
+[[usermsg]]
+name = "InitHUD"
+channel = "hud"
+note = "Deleted Scenes fog block (14 bytes): three shorts of colour, three coords, spawn flags"
+fields = [
+	{ name = "fogR", type = "short" },
+	{ name = "fogG", type = "short" },
+	{ name = "fogB", type = "short" },
+	{ name = "density", type = "coord" },
+	{ name = "startDist", type = "coord" },
+	{ name = "stopDist", type = "coord" },
+	{ name = "spawnFlags", type = "short" },
+]
+
+# ---------------------------------------------------------- CZ:DS-specific
+
+[[usermsg]]
+name = "AccesBits"
+channel = "weapon"
+note = "accessory inventory bitfield"
+fields = [
+	{ name = "accessoryBits", type = "long" },
+]
+
+[[usermsg]]
+name = "BarTime"
+channel = "hud"
+fields = [
+	{ name = "duration", type = "short" },
+]
+
+[[usermsg]]
+name = "BeamPts"
+channel = "world"
+note = "beam between two points; the three shorts after the texture are unused by the client"
+fields = [
+	{ name = "start", type = "vec3" },
+	{ name = "end", type = "vec3" },
+	{ name = "texture", type = "short" },
+	{ name = "s1", type = "short" },
+	{ name = "s2", type = "short" },
+	{ name = "s3", type = "short" },
+	{ name = "b1", type = "byte" },
+	{ name = "speed", type = "short" },
+	{ name = "r", type = "byte" },
+	{ name = "g", type = "byte" },
+	{ name = "b", type = "byte" },
+]
+
+[[usermsg]]
+name = "FiberCamera"
+channel = "screen"
+fields = [
+	{ name = "on", type = "byte" },
+	{ name = "entityIndex", type = "short" },
+	{ name = "origin", type = "vec3" },
+	{ name = "angles", type = "vec3" },
+]
+
+[[usermsg]]
+name = "GrassInfo"
+channel = "world"
+fields = [
+	{ name = "sprite", type = "string" },
+	{ name = "fadeDistance", type = "coord" },
+	{ name = "minHeight", type = "coord" },
+	{ name = "maxHeight", type = "coord" },
+	{ name = "density", type = "long" },
+]
+
+[[usermsg]]
+name = "HudIcons"
+channel = "hud"
+fields = [
+	{ name = "icons", type = "short" },
+	{ name = "correctWeapon", type = "short" },
+	{ name = "inPosition", type = "short" },
+]
+
+[[usermsg]]
+name = "LevelLocks"
+channel = "meta"
+fields = [
+	{ name = "levelLocks", type = "long" },
+]
+
+[[usermsg]]
+name = "MapInfo"
+channel = "hud"
+note = "empty payload: the client only shows the world map"
+fields = []
+
+[[usermsg]]
+name = "NightVision"
+channel = "status"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "NVGToggle"
+channel = "status"
+note = "client hook only; the Deleted Scenes server registers NightVision instead"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "PartState"
+channel = "world"
+fields = [
+	{ name = "entityIndex", type = "short" },
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "Particles"
+channel = "world"
+note = "particle emitter template; fixed linear layout read by MsgFunc_Particles"
+fields = [
+	{ name = "texture", type = "short" },
+	{ name = "count", type = "byte" },
+	{ name = "speed", type = "short" },
+	{ name = "noise", type = "byte", note = "/10" },
+	{ name = "renderMode", type = "byte" },
+	{ name = "gravity", type = "short", note = "/10" },
+	{ name = "scale", type = "short" },
+	{ name = "scaleSpeed", type = "byte" },
+	{ name = "brightness", type = "byte" },
+	{ name = "fadeSpeed", type = "byte" },
+	{ name = "life", type = "short", note = "/10" },
+	{ name = "type", type = "byte" },
+	{ name = "flags", type = "byte" },
+	{ name = "angles", type = "vec3" },
+	{ name = "angularVelocity", type = "vec3" },
+	{ name = "colorR", type = "byte" },
+	{ name = "colorG", type = "byte" },
+	{ name = "colorB", type = "byte" },
+	{ name = "state", type = "byte" },
+	{ name = "frequency", type = "short", note = "/10" },
+	{ name = "countRandom", type = "byte" },
+	{ name = "targetEntity", type = "short" },
+	{ name = "sourceEntity", type = "short" },
+	{ name = "id", type = "short" },
+	{ name = "visibleEntity", type = "short" },
+	{ name = "attachment", type = "byte" },
+]
+
+[[usermsg]]
+name = "ReceiveW"
+channel = "world"
+fields = [
+	{ name = "weatherType", type = "byte" },
+]
+
+[[usermsg]]
+name = "SecurityCam"
+channel = "screen"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "SniperLaser"
+channel = "screen"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "TmpSprite"
+channel = "world"
+fields = [
+	{ name = "origin", type = "vec3" },
+	{ name = "texture", type = "short" },
+	{ name = "scale", type = "short" },
+	{ name = "life", type = "short", note = "/10 seconds" },
+	{ name = "brightness", type = "byte" },
+	{ name = "renderMode", type = "byte" },
+]
+
+[[usermsg]]
+name = "WindInfo"
+channel = "world"
+note = "wind direction and change-time constraints"
+fields = [
+	{ name = "minX", type = "coord" },
+	{ name = "maxX", type = "coord" },
+	{ name = "minY", type = "coord" },
+	{ name = "maxY", type = "coord" },
+	{ name = "minChangeTime", type = "coord" },
+	{ name = "maxChangeTime", type = "coord" },
+]
+
+[[usermsg]]
+name = "HudTextPro"
+channel = "text"
+note = "raw: registered by this mod's server but never hooked or sent in the SDK; bshift and cstrike define the readable variants"
+raw = true
+fields = []

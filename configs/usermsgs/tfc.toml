@@ -1,0 +1,29 @@
+# Team Fortress Classic (mod dir: tfc) UserMsg wire formats.
+#
+# GoldSrc-SDK ships the TFC client DLL but not the TFC server, so the layouts
+# here come from tfc/cl_dll's MsgFunc_*/READ_* handlers. Messages that match
+# Half-Life (or the TFC messages already documented in valve.toml) are
+# inherited from valve.toml.
+
+extends = "valve.toml"
+
+[[usermsg]]
+name = "Battery"
+channel = "status"
+note = "TFC reads battery and battery maximum"
+fields = [
+	{ name = "battery", type = "short" },
+	{ name = "batteryMax", type = "short" },
+]
+
+[[usermsg]]
+name = "SpecFade"
+channel = "screen"
+note = "TFC spectator fade; the client reads it only while watching the target player, and the TFC server source is not part of the SDK, so the five fields are modeled as always present"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "fade", type = "byte", note = "BUILD_TELEPORTER_FADE_IN/OUT" },
+	{ name = "team", type = "byte" },
+	{ name = "time", type = "short", note = "/100 seconds" },
+	{ name = "alpha", type = "byte" },
+]

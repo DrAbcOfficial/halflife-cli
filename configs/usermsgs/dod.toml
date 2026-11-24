@@ -1,0 +1,445 @@
+# Day of Defeat (mod dir: dod) UserMsg wire formats.
+#
+# Derived from GoldSrc-SDK dod/cl_dll, dod/vgui2 and dod/dlls: the wire order
+# and gating come from the server MESSAGE_BEGIN/WRITE_* sites, the field order
+# from the client MsgFunc_*/READ_* handlers. Messages that match Half-Life are
+# inherited from valve.toml.
+
+extends = "valve.toml"
+
+# ------------------------------------------------------------- wire differs
+
+[[usermsg]]
+name = "CurWeapon"
+channel = "weapon"
+note = "DoD writes a byte clip, not a char"
+fields = [
+	{ name = "state", type = "byte" },
+	{ name = "weaponId", type = "char" },
+	{ name = "clip", type = "byte" },
+]
+
+[[usermsg]]
+name = "WeaponList"
+channel = "weapon"
+note = "DoD has no weapon-name string; id is a short and a max-clip byte trails the flags"
+fields = [
+	{ name = "ammo1Type", type = "char" },
+	{ name = "ammo1Max", type = "byte" },
+	{ name = "ammo2Type", type = "char" },
+	{ name = "ammo2Max", type = "byte" },
+	{ name = "slot", type = "char" },
+	{ name = "slotPosition", type = "char" },
+	{ name = "weaponId", type = "short" },
+	{ name = "flags", type = "byte" },
+	{ name = "maxClip", type = "byte" },
+]
+
+[[usermsg]]
+name = "HudText"
+channel = "text"
+note = "DoD adds the hint flag byte"
+fields = [
+	{ name = "messageName", type = "string" },
+	{ name = "hint", type = "byte" },
+]
+
+[[usermsg]]
+name = "DeathMsg"
+channel = "score"
+note = "DoD sends a weapon index instead of a weapon name"
+fields = [
+	{ name = "killer", type = "byte" },
+	{ name = "victim", type = "byte" },
+	{ name = "weapon", type = "byte", note = "index into the client death-icon table" },
+]
+
+[[usermsg]]
+name = "ScoreInfo"
+channel = "score"
+note = "DoD's compact 7-byte score row (all bytes)"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "objScore", type = "byte" },
+	{ name = "frags", type = "byte" },
+	{ name = "deaths", type = "byte" },
+	{ name = "playerClass", type = "byte" },
+	{ name = "team", type = "byte" },
+	{ name = "status", type = "byte" },
+]
+
+[[usermsg]]
+name = "TeamScore"
+channel = "score"
+fields = [
+	{ name = "team", type = "byte" },
+	{ name = "score", type = "short" },
+]
+
+[[usermsg]]
+name = "StatusValue"
+channel = "status"
+note = "DoD's status value is a single health byte"
+fields = [
+	{ name = "health", type = "byte" },
+]
+
+[[usermsg]]
+name = "VGUIMenu"
+channel = "hud"
+note = "DoD always writes a menu id plus a long parameter; the client only falls back to the string form for MENU_MAPBRIEFING"
+fields = [
+	{ name = "menuID", type = "byte" },
+	{ name = "value", type = "long" },
+]
+
+[[usermsg]]
+name = "ResetHUD"
+channel = "hud"
+note = "DoD writes an empty message"
+fields = []
+
+# ------------------------------------------------------------ DoD-specific
+
+[[usermsg]]
+name = "AmmoShort"
+channel = "weapon"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "count", type = "short" },
+]
+
+[[usermsg]]
+name = "BloodPuff"
+channel = "world"
+fields = [
+	{ name = "origin", type = "vec3" },
+]
+
+[[usermsg]]
+name = "CameraView"
+channel = "screen"
+fields = [
+	{ name = "targetName", type = "string" },
+]
+
+[[usermsg]]
+name = "CancelProg"
+channel = "hud"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "team", type = "byte" },
+]
+
+[[usermsg]]
+name = "CapMsg"
+channel = "text"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "name", type = "string" },
+	{ name = "team", type = "byte" },
+]
+
+[[usermsg]]
+name = "ClCorpse"
+channel = "world"
+fields = [
+	{ name = "model", type = "string" },
+	{ name = "origin", type = "vec3" },
+	{ name = "angles", type = "angle", count = 3 },
+	{ name = "sequence", type = "byte" },
+	{ name = "body", type = "short" },
+	{ name = "team", type = "byte" },
+]
+
+[[usermsg]]
+name = "ClanTimer"
+channel = "hud"
+fields = [
+	{ name = "seconds", type = "byte" },
+]
+
+[[usermsg]]
+name = "ClientAreas"
+channel = "hud"
+note = "status 255 (the server writes -1) introduces the sprite name"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "status", type = "byte" },
+	{ name = "sprite", type = "string", when = { field = "status", eq = 255 } },
+]
+
+[[usermsg]]
+name = "CurMarker"
+channel = "hud"
+fields = [
+	{ name = "marker", type = "byte" },
+]
+
+[[usermsg]]
+name = "Frags"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "frags", type = "short" },
+]
+
+[[usermsg]]
+name = "GameRules"
+channel = "meta"
+fields = [
+	{ name = "allies", type = "byte" },
+	{ name = "axis", type = "byte" },
+]
+
+[[usermsg]]
+name = "HLTV"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "data", type = "byte" },
+]
+
+[[usermsg]]
+name = "HandSignal"
+channel = "text"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "signal", type = "byte" },
+]
+
+[[usermsg]]
+name = "InitObj"
+channel = "hud"
+note = "control-point table; each point carries entity, index/owner/visibility, three icon ids and an x/y origin"
+fields = [
+	{ name = "count", type = "byte" },
+	{ name = "point", type = "group", count = "count", fields = [
+		{ name = "entityIndex", type = "short" },
+		{ name = "index", type = "byte" },
+		{ name = "owner", type = "byte" },
+		{ name = "visible", type = "byte" },
+		{ name = "icons", type = "byte", count = 3, note = "neutral/allies/axis icon ids" },
+		{ name = "originX", type = "coord" },
+		{ name = "originY", type = "coord" },
+	] },
+]
+
+[[usermsg]]
+name = "MapMarker"
+channel = "hud"
+note = "client hook only; the DoD server registers the message but never writes it in this SDK"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "marker", type = "byte" },
+	{ name = "x", type = "short" },
+	{ name = "y", type = "short" },
+]
+
+[[usermsg]]
+name = "ObjScore"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "objScore", type = "short" },
+]
+
+[[usermsg]]
+name = "Object"
+channel = "hud"
+fields = [
+	{ name = "icon", type = "string" },
+]
+
+[[usermsg]]
+name = "PClass"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "playerClass", type = "byte" },
+]
+
+[[usermsg]]
+name = "PShoot"
+channel = "world"
+fields = [
+	{ name = "groupId", type = "byte" },
+	{ name = "state", type = "byte" },
+	{ name = "dir", type = "vec3", when = { field = "state", eq = 1 } },
+]
+
+[[usermsg]]
+name = "PStatus"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "status", type = "byte" },
+]
+
+[[usermsg]]
+name = "PTeam"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "team", type = "byte" },
+]
+
+[[usermsg]]
+name = "PlayersIn"
+channel = "hud"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "team", type = "byte" },
+	{ name = "players", type = "byte" },
+	{ name = "required", type = "byte" },
+]
+
+[[usermsg]]
+name = "ProgUpdate"
+channel = "hud"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "duration", type = "coord" },
+]
+
+[[usermsg]]
+name = "RoundState"
+channel = "meta"
+fields = [
+	{ name = "state", type = "byte" },
+]
+
+[[usermsg]]
+name = "Scope"
+channel = "weapon"
+fields = [
+	{ name = "scope", type = "byte" },
+]
+
+[[usermsg]]
+name = "ScoreInfoLong"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "objScore", type = "short" },
+	{ name = "frags", type = "short" },
+	{ name = "deaths", type = "short" },
+	{ name = "playerClass", type = "byte" },
+	{ name = "team", type = "byte" },
+	{ name = "status", type = "byte" },
+]
+
+[[usermsg]]
+name = "ScoreShort"
+channel = "score"
+fields = [
+	{ name = "playerIndex", type = "byte" },
+	{ name = "objScore", type = "short" },
+	{ name = "frags", type = "short" },
+	{ name = "deaths", type = "short" },
+	{ name = "status", type = "byte" },
+]
+
+[[usermsg]]
+name = "SetObj"
+channel = "hud"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "owner", type = "byte" },
+	{ name = "timedCap", type = "byte" },
+]
+
+[[usermsg]]
+name = "StartProg"
+channel = "hud"
+note = "the server writes the duration as a short; the client only consumes its first byte"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "team", type = "byte" },
+	{ name = "duration", type = "short" },
+]
+
+[[usermsg]]
+name = "StartProgF"
+channel = "hud"
+fields = [
+	{ name = "index", type = "byte" },
+	{ name = "team", type = "byte" },
+	{ name = "duration", type = "coord" },
+]
+
+[[usermsg]]
+name = "TimeLeft"
+channel = "hud"
+fields = [
+	{ name = "seconds", type = "short" },
+]
+
+[[usermsg]]
+name = "TimerStatus"
+channel = "hud"
+fields = [
+	{ name = "active", type = "byte" },
+	{ name = "time", type = "coord" },
+]
+
+[[usermsg]]
+name = "UseSound"
+channel = "meta"
+fields = [
+	{ name = "on", type = "byte" },
+]
+
+[[usermsg]]
+name = "WaveStatus"
+channel = "hud"
+fields = [
+	{ name = "status", type = "byte" },
+]
+
+[[usermsg]]
+name = "WaveTime"
+channel = "hud"
+fields = [
+	{ name = "time", type = "char" },
+]
+
+[[usermsg]]
+name = "WideScreen"
+channel = "hud"
+fields = [
+	{ name = "visible", type = "byte" },
+]
+
+[[usermsg]]
+name = "YouDied"
+channel = "hud"
+fields = [
+	{ name = "unused", type = "byte" },
+]
+
+[[usermsg]]
+name = "Weather"
+channel = "world"
+note = "weather system owner and type; no client hook, display-only"
+fields = [
+	{ name = "entityIndex", type = "byte" },
+	{ name = "type", type = "byte" },
+]
+
+[[usermsg]]
+name = "ReloadDone"
+channel = "hud"
+fields = []
+
+[[usermsg]]
+name = "ResetSens"
+channel = "screen"
+fields = []
+
+[[usermsg]]
+name = "HudTextPro"
+channel = "text"
+note = "raw: registered by this mod's server but never hooked or sent in the SDK; bshift and cstrike define the readable variants"
+raw = true
+fields = []

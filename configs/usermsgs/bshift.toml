@@ -1,0 +1,16 @@
+# Half-Life: Blue Shift (mod dir: bshift) UserMsg wire formats.
+#
+# Derived from GoldSrc-SDK bshift/cl_dll, bshift/vgui2 and bshift/dlls: the
+# wire order and gating come from the server MESSAGE_BEGIN/WRITE_* sites, the
+# field order from the client MsgFunc_*/READ_* handlers. Everything not
+# listed here is identical to Half-Life and inherited from valve.toml.
+
+extends = "valve.toml"
+
+[[usermsg]]
+name = "HudTextPro"
+channel = "text"
+note = "Blue Shift variant: one message-name string only (cstrike's HudTextPro adds a hint byte)"
+fields = [
+	{ name = "messageName", type = "string" },
+]
