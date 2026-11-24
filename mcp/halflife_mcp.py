@@ -49,6 +49,7 @@ from halflifecli.manager import (
 from halflifecli.models import (
     ConsoleWindow,
     GameStatus,
+    HalflifeInfo,
     UserMsgEvents,
     UserMsgMessages,
     UserMsgStatus,
@@ -78,7 +79,11 @@ INSTRUCTIONS = (
     "UDP query limits; if it crashes, read the newest "
     "fatalerror-<datetime>-<pid>.log beside the launcher (the directory holding "
     "svencoop.exe) for the fatal error title and message. "
-    "Use run_command for everything else; its output is capped at "
+    "Prefer stdio for command input and output: send_console writes one command "
+    "to the plugin's stdin and read_console returns the captured stdout mirror; "
+    "both require a game this server launched. run_command and find_cvar use "
+    "RCON and are the fallback, and the only channel for attached games (which "
+    "have no console stream); run_command output is capped at "
     "max_lines (default 200) and the full text of a capped command is saved to "
     "the file path it returns, so grep that file instead of raising the cap. "
     "Inspect VGUI2 structure with vgui2_tree / vgui2_inspect; follow next_cursor. "
@@ -95,7 +100,12 @@ INSTRUCTIONS = (
     "decoded network traffic (page with since_seq=usermsg_events(...).newest_seq, "
     "filter by channel or name), usermsg_messages shows the schema's message "
     "layouts, usermsg_status reports hook health. User messages only flow while "
-    "connected to a server."
+    "connected to a server. Call halflife_info for the environment map: the "
+    "installed UserMsg schemas (one TOML per -game folder under "
+    "<mod>/metahook/configs/halflifecli/usermsgs/, selected by the plugin "
+    "config), the plugin config path, the validated RCON endpoint and the "
+    "channel priority. Never infer an RCON host/port/protocol: read "
+    "halflifecli.endpoint.json or run cli.rconinfo."
 )
 
 manager = Manager()
@@ -224,13 +234,28 @@ def game_status() -> GameStatus:
     return manager.game_status()
 
 
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
+def halflife_info() -> HalflifeInfo:
+    """Environment map for agents: installed UserMsg schemas with game labels, the plugin config and validated
+    RCON endpoint, and the channel priority (stdio first, RCON fallback). Works before a game is launched."""
+    return manager.info()
+
+
+@mcp.tool()
+def send_console(
+    command: Annotated[str, Field(description="One console command line, e.g. 'status' or 'map osprey'")],
+) -> str:
+    """Queue one console command on the game's stdin (stdio, fire-and-forget). Preferred input channel for games this server launched; read the output with read_console. Attached games have no stdin: use run_command (RCON)."""
+    return manager.send_console(command)
+
+
 @mcp.tool()
 def run_command(
     command: Annotated[str, Field(description="Console command or cvar assignment, e.g. 'status', 'sv_cheats 1'")],
     max_lines: Annotated[int, Field(description="Cap on returned lines so a chatty command cannot flood context; -1 keeps every line, 0 returns only the saved-file marker. When lines are dropped, the full output is saved to a file whose path is returned.", ge=-1)] = DEFAULT_COMMAND_MAX_LINES,
     keep: Annotated[Literal["head", "tail", "both"], Field(description="Which lines to keep when max_lines is hit: head = first lines, tail = last lines, both = first and last halves")] = "head",
 ) -> str:
-    """Run one console command over RCON and return the captured output."""
+    """Run one console command over RCON and return the captured output. RCON is the fallback channel: prefer send_console + read_console for games this server launched."""
     return manager.run_command(command, max_lines, keep)
 
 
@@ -280,7 +305,7 @@ def read_console(
     max_lines: Annotated[int, Field(description="Maximum lines to return", ge=1, le=1000)] = 200,
     cursor: Annotated[int | None, Field(description="Resume after this line number; omit for the newest lines")] = None,
 ) -> ConsoleWindow:
-    """Read captured game console output; only available for games this server launched."""
+    """Read captured game console output from the plugin's stdin/stdout bridge; the preferred observation channel for games this server launched (attached games expose no stream)."""
     return manager.read_console(max_lines, cursor)
 
 
@@ -305,13 +330,13 @@ def quit_game(
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
 def usermsg_status() -> UserMsgStatus:
-    """Report the UserMsg monitor state: loaded schema, coord size, hook counts."""
+    """Report the UserMsg monitor state: loaded schema (installed under <mod>/metahook/configs/halflifecli/usermsgs/), coord size, hook counts."""
     return manager.usermsg_status()
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
 def usermsg_messages() -> UserMsgMessages:
-    """Load the merged UserMsg schema from the game install: message names, field layouts, notes."""
+    """Load the merged UserMsg schema from the game install (installed usermsgs/ folder, extends chain merged): message names, field layouts, notes."""
     return manager.usermsg_messages()
 
 
@@ -336,9 +361,9 @@ def usermsg_set_display(
 
 @mcp.tool()
 def usermsg_reload_schema(
-    sync_from_repo: Annotated[bool, Field(description="Copy configs/usermsgs/*.toml from the halflife-cli repo into the game install before reloading")] = True,
+    sync_from_repo: Annotated[bool, Field(description="When this server runs from a source checkout, copy its configs/usermsgs/*.toml into the game install first (ignored otherwise)")] = True,
 ) -> str:
-    """Reload the UserMsg schema TOML (optionally syncing it from the repo first)."""
+    """Reload the UserMsg schema TOML from the game install (optionally syncing files from a source checkout first). Use halflife_info for the schema folder and halflifecli.toml for the active file."""
     return manager.usermsg_reload_schema(sync_from_repo)
 
 

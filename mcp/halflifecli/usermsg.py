@@ -36,6 +36,33 @@ USERMSG_EVENTS_MORE_RE = re.compile(r"cli\.usermsg: (\d+) more after #\d+", re.M
 # Channel for schema messages (here or in an inherited base) without one.
 USERMSG_DEFAULT_CHANNEL = "usermsg"
 
+# Default schema files shipped with the plugin, keyed by file name. The MCP
+# server may run against an older install with a subset, and a mod picks one
+# file by name (<moddir>.toml unless [usermsg] file overrides it). Keep this
+# list in sync with configs/usermsgs/ when a schema is added.
+SCHEMA_CATALOG = {
+    "valve.toml": ("Half-Life", "base schema for the GoldSrc mods"),
+    "cstrike.toml": ("Counter-Strike 1.x", "CS HUD, VGUI menus and tutor messages"),
+    "czero.toml": ("Condition Zero", "inherits cstrike (same sources)"),
+    "czeror.toml": ("CZ: Deleted Scenes", "single-player fog, particles and weather HUD"),
+    "bshift.toml": ("Half-Life: Blue Shift", "Blue Shift HUD additions"),
+    "gearbox.toml": ("Half-Life: Opposing Force", "CTF stats, custom/flag icons"),
+    "tfc.toml": ("Team Fortress Classic", "two-short Battery and spectator fade"),
+    "dod.toml": ("Day of Defeat", "objective/control-point and score messages"),
+    "dmc.toml": ("Deathmatch Classic", "CTF flags/runes, teleporter and fog"),
+    "ricochet.toml": ("Ricochet", "Frozen/Powerup/Reward"),
+    "svencoop.toml": ("Sven Co-op", "only schema with 32-bit coords"),
+}
+
+
+def installed_schema_files(target):
+    """Sorted TOML file names present in the game's usermsgs/ folder."""
+    try:
+        names = os.listdir(usermsg_schema_dir(target))
+    except OSError:
+        return []
+    return sorted(n for n in names if n.lower().endswith(".toml"))
+
 
 def parse_usermsg_status(text):
     """UserMsgStatus from `cli.usermsg` output, or None when unrecognized."""

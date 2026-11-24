@@ -54,3 +54,47 @@ class UserMsgMessages(BaseModel):
     extends: str | None
     coord_size: int
     messages: list[dict]   # {name, raw, note, fields: [{name, type, count, when, note, fields}]}
+
+
+class SchemaInfo(BaseModel):
+    file: str              # TOML file name, e.g. svencoop.toml
+    game: str | None = None   # human game label, when the file is a known default
+    note: str | None = None   # what the schema covers
+    installed: bool = False   # present in the game's usermsgs/ folder
+    active: bool = False      # the file the plugin currently loads
+
+
+class RconEndpoint(BaseModel):
+    protocol: str          # goldsrc-udp (native engines) or source-tcp
+    host: str              # connect host (wildcard binds map to 127.0.0.1)
+    port: int
+    pid: int | None = None
+
+
+class RconInfo(BaseModel):
+    config_path: str | None = None
+    config_exists: bool = False
+    bind: str | None = None        # [rcon].bind (Source TCP only)
+    port: int | None = None        # [rcon].port (Source TCP only)
+    password_set: bool = False     # password value is never returned
+    allowed_ips: str | None = None
+    endpoint_path: str | None = None
+    endpoint: RconEndpoint | None = None   # validated ready metadata, if any
+
+
+class TransportInfo(BaseModel):
+    preferred: str = "stdio"       # stdin/stdout console bridge
+    fallback: str = "rcon"
+    console_available: bool = False  # only games launched by this server
+    detail: str = ""
+
+
+class HalflifeInfo(BaseModel):
+    game_dir: str | None = None
+    mod: str | None = None
+    transport: TransportInfo
+    schema_dir: str | None = None
+    active_schema: str | None = None
+    schemas: list[SchemaInfo] = []
+    rcon: RconInfo
+    guidance: list[str] = []

@@ -256,11 +256,15 @@ game_dir="D:\\CS3266")` starts `MetaHook_blob.exe -insecure -game cstrike
 schemas and the RCON endpoint of every later call follow the mod directory of
 the target the session launched.
 
-Tools: `launch_game`, `game_status`, `run_command`, `find_cvar`,
-`send_key` / `send_mouse` (key and mouse-button events through the engine's
-SDL2 event queue or the original `CGame::WindowProc`), `read_console`, `snapshot`
-(returns a PNG image, downscaled by default), `quit_game`, and the UserMsg
-monitor tools `usermsg_status` (hook health),
+Tools: `launch_game`, `game_status`, `halflife_info` (installed UserMsg
+schemas with game labels, the plugin config and validated RCON endpoint, and
+the stdio-first / RCON-fallback channel priority), `send_console` (stdin,
+fire-and-forget) / `read_console` (stdout mirror) for games this server
+launched, `run_command` / `find_cvar` (RCON; the fallback and the only channel
+for attached games), `send_key` / `send_mouse` (key and mouse-button events
+through the engine's SDL2 event queue or the original `CGame::WindowProc`),
+`snapshot` (returns a PNG image, downscaled by default), `quit_game`, and the
+UserMsg monitor tools `usermsg_status` (hook health),
 `usermsg_messages` (merged schema layouts), `usermsg_events` (decoded traffic,
 paged by `since_seq`), `usermsg_set_display`, and `usermsg_reload_schema`.
 

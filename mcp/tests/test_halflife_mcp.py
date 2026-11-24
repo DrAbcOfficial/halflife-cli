@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from unittest.mock import patch
 
@@ -31,7 +32,7 @@ import anyio
 import game_process
 import rcon_client
 import halflife_mcp
-from game_process import BANNER_RE, GameProcess
+from game_process import BANNER_RE, GameProcess, GameTarget
 from halflifecli import manager as manager_module
 from halflifecli.manager import DEFAULT_COMMAND_MAX_LINES, Manager, truncate_output
 from halflifecli.plugin_config import read_plugin_config
@@ -272,6 +273,87 @@ class TestUserMsgParsers(unittest.TestCase):
             self.assertEqual(n, 1)
             self.assertTrue(os.path.exists(
                 os.path.join(game, "svencoop", "metahook", "configs", "halflifecli", "usermsgs", "a.toml")))
+
+
+# ---------------------------------------------------------------------------
+# Environment map and stdio input
+# ---------------------------------------------------------------------------
+
+class TestInfoAndConsole(unittest.TestCase):
+    def _game(self, root):
+        cfg = os.path.join(root, "svencoop", "metahook", "configs", "halflifecli")
+        schemas = os.path.join(cfg, "usermsgs")
+        os.makedirs(schemas)
+        with open(os.path.join(cfg, "halflifecli.toml"), "wb") as f:
+            f.write("""[rcon]
+bind = "127.0.0.1"
+port = 27016
+password = "secret"
+""".encode())
+        for name in ("valve.toml", "svencoop.toml"):
+            with open(os.path.join(schemas, name), "wb") as f:
+                f.write("""[[usermsg]]
+name = "X"
+fields = []
+""".encode())
+        return cfg, schemas
+
+    def test_info_reports_schemas_and_rcon(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg, schemas = self._game(d)
+            mgr = Manager()
+            mgr._target = GameTarget(d)
+            info = mgr.info()
+            self.assertEqual(d, info.game_dir)
+            self.assertEqual("svencoop", info.mod)
+            self.assertEqual(schemas, info.schema_dir)
+            self.assertEqual("svencoop.toml", info.active_schema)
+            self.assertTrue(info.rcon.config_exists)
+            self.assertEqual("127.0.0.1", info.rcon.bind)
+            self.assertEqual(27016, info.rcon.port)
+            self.assertTrue(info.rcon.password_set)
+            self.assertNotIn("secret", info.model_dump_json())
+            by_name = {s.file: s for s in info.schemas}
+            self.assertTrue(by_name["svencoop.toml"].active)
+            self.assertTrue(by_name["svencoop.toml"].installed)
+            self.assertFalse(by_name["cstrike.toml"].installed)
+            self.assertEqual("Half-Life", by_name["valve.toml"].game)
+            self.assertFalse(info.transport.console_available)
+            self.assertEqual("stdio", info.transport.preferred)
+            self.assertEqual("rcon", info.transport.fallback)
+            self.assertTrue(info.guidance)
+
+    def test_info_without_resolved_game(self):
+        mgr = Manager()
+        with patch.object(manager_module, "resolve_target", return_value=(None, "not found")):
+            info = mgr.info()
+        self.assertIsNone(info.game_dir)
+        self.assertIsNone(info.schema_dir)
+        self.assertEqual([], [s for s in info.schemas if s.installed])
+        self.assertEqual("stdio", info.transport.preferred)
+        self.assertEqual("rcon", info.transport.fallback)
+
+    def test_send_console_requires_managed_game(self):
+        mgr = Manager()
+        with self.assertRaises(ToolError):
+            mgr.send_console("status")
+
+    def test_send_console_queues_line(self):
+        mgr = Manager()
+        sent = []
+        mgr._proc = types.SimpleNamespace(alive=True, send_stdin=lambda line: sent.append(line) or True)
+        self.assertIn("stdin", mgr.send_console("status"))
+        self.assertEqual(["status"], sent)
+        with self.assertRaises(ToolError):
+            mgr.send_console("map a" + chr(10) + "quit")
+        mgr._proc.send_stdin = lambda line: False
+        with self.assertRaises(ToolError):
+            mgr.send_console("status")
+
+    def test_send_console_rejects_empty(self):
+        mgr = Manager()
+        with self.assertRaises(ToolError):
+            mgr.send_console("   ")
 
 
 # ---------------------------------------------------------------------------
@@ -1082,7 +1164,8 @@ class TestStdioSmoke(unittest.TestCase):
             async with Client(params) as client:
                 tools = await client.list_tools()
                 names = {t.name for t in tools.tools}
-                expected = {"launch_game", "attach_game", "game_status", "run_command",
+                expected = {"launch_game", "attach_game", "game_status", "halflife_info",
+                            "send_console", "run_command",
                             "find_cvar", "send_key", "send_mouse", "move_mouse",
                             "read_console", "snapshot", "quit_game",
                             "usermsg_status", "usermsg_messages", "usermsg_events",

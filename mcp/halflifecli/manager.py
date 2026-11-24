@@ -19,6 +19,8 @@ import rcon_client
 from find_game import resolve_target
 from game_process import (
     BANNER_TIMEOUT_S,
+    plugin_config_dir,
+    plugin_config_path,
     EXIT_CODE_GRACE_S,
     EXIT_CONFIRM_S,
     IMAGE_EXTENSIONS,
@@ -34,14 +36,27 @@ from game_process import (
 from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
 
-from halflifecli.models import ConsoleWindow, GameStatus, UserMsgEvents
-from halflifecli.plugin_config import plugin_rcon_password, read_endpoint_file
+from halflifecli.models import (
+    ConsoleWindow,
+    GameStatus,
+    HalflifeInfo,
+    RconEndpoint,
+    RconInfo,
+    SchemaInfo,
+    TransportInfo,
+    UserMsgEvents,
+)
+from halflifecli.plugin_config import plugin_rcon_password, read_endpoint_file, read_plugin_config
 from halflifecli.screenshot import find_new_screenshot, shot_to_png
 from halflifecli.usermsg import (
+    SCHEMA_CATALOG,
+    installed_schema_files,
     load_usermsg_schema,
     parse_usermsg_events,
     parse_usermsg_status,
     sync_usermsg_schemas,
+    usermsg_schema_dir,
+    usermsg_schema_file,
 )
 
 log = logging.getLogger(__name__)
@@ -378,6 +393,95 @@ class Manager:
                 self._refresh_managed_endpoint_locked()
             return self._status_locked()
 
+    def info(self):
+        """Environment map for MCP clients: transport priority, schemas, RCON.
+
+        Works before a launch: the default target is resolved the same way
+        game_status resolves it, so installed schema files and the plugin
+        config can be reported without starting the game.
+        """
+        with self._lock:
+            target = self._session_target() if self._target is None else self._target
+            managed = self._proc is not None and self._proc.alive
+            endpoint = self._endpoint if managed else None
+            if endpoint is None and target is not None:
+                try:
+                    endpoint = read_endpoint_file(
+                        target, expected_pid=self._proc.pid if managed else None)
+                except Exception:
+                    endpoint = None
+
+            game_dir = target.directory if target is not None else None
+            mod = target.mod if target is not None else None
+            config_path = plugin_config_path(target) if target is not None else None
+            config_exists = bool(config_path) and os.path.isfile(config_path)
+            config = read_plugin_config(target) if target is not None else {}
+            rcon_cfg = config.get("rcon", {}) if isinstance(config, dict) else {}
+            if not isinstance(rcon_cfg, dict):
+                rcon_cfg = {}
+            rcon_port = rcon_cfg.get("port")
+            rcon_port = rcon_port if type(rcon_port) is int else None
+
+            schema_dir = usermsg_schema_dir(target) if target is not None else None
+            active = usermsg_schema_file(target) if target is not None else None
+            installed = ({n.lower(): n for n in installed_schema_files(target)}
+                         if target is not None else {})
+            active_key = active.lower() if active else None
+
+            schemas = []
+            for file, (game, note) in SCHEMA_CATALOG.items():
+                schemas.append(SchemaInfo(
+                    file=file, game=game, note=note,
+                    installed=file.lower() in installed,
+                    active=file.lower() == active_key))
+            known = {f.lower() for f in SCHEMA_CATALOG}
+            for key in sorted(set(installed) - known):
+                schemas.append(SchemaInfo(
+                    file=installed[key], installed=True, active=key == active_key))
+
+            console_available = managed
+            if console_available:
+                detail = ("send_console + read_console (the plugin's stdin/stdout console "
+                          "bridge) are available and preferred; run_command uses RCON")
+            else:
+                detail = ("no console stream (game not launched by this server): use "
+                          "run_command / find_cvar over RCON with the validated endpoint")
+            guidance = [
+                "UserMsg schemas: one TOML per -game folder in %s; the active file is %s"
+                % (schema_dir or "<game>/<mod>/metahook/configs/halflifecli/usermsgs",
+                   active or "<moddir>.toml"),
+                "usermsg_messages returns the merged layouts of the active schema; "
+                "usermsg_status reports hook health; call usermsg_reload_schema after "
+                "installing or editing a schema file",
+                "RCON: [rcon] in %s configures the Source TCP backend (bind/port); native "
+                "engines bind through the engine's ip/hostport/port cvars" % (config_path or "halflifecli.toml"),
+                "The authoritative endpoint is %s, also printed by cli.rconinfo; never "
+                "guess the port or protocol" % (os.path.join(plugin_config_dir(target), "halflifecli.endpoint.json")
+                                                if target is not None else "halflifecli.endpoint.json"),
+                "Prefer stdio (send_console + read_console) for games this server launched; "
+                "fall back to RCON (run_command/find_cvar) when no console stream exists",
+            ]
+
+        return HalflifeInfo(
+            game_dir=game_dir, mod=mod,
+            transport=TransportInfo(
+                preferred="stdio", fallback="rcon",
+                console_available=console_available, detail=detail),
+            schema_dir=schema_dir, active_schema=active,
+            schemas=schemas,
+            rcon=RconInfo(
+                config_path=config_path, config_exists=config_exists,
+                bind=rcon_cfg.get("bind", "127.0.0.1"),
+                port=rcon_port,
+                password_set=bool(plugin_rcon_password(target)) if target is not None else False,
+                allowed_ips=rcon_cfg.get("allowed_ips"),
+                endpoint_path=os.path.join(plugin_config_dir(target), "halflifecli.endpoint.json")
+                if target is not None else None,
+                endpoint=RconEndpoint(
+                    protocol=endpoint.protocol, host=endpoint.host,
+                    port=endpoint.port, pid=endpoint.pid) if endpoint is not None else None),
+            guidance=guidance)
+
     def run_command(self, command, max_lines=-1, keep="head"):
         cmd = (command or "").strip()
         if not cmd:
@@ -462,6 +566,23 @@ class Manager:
             # buttons is the held mask after the event, so release reports none held.
             edges = self._trap_sequence(f"cli.trapmouse {buttons} 1", "cli.trapmouse 0 0", action, hold_ms)
             return "\n".join((motion, edges)) if motion is not None else edges
+
+    def send_console(self, command):
+        """Queue one console line on the managed game's stdin (fire-and-forget)."""
+        line = (command or "").strip()
+        if not line:
+            raise ToolError("command is empty")
+        if chr(10) in line or chr(13) in line:
+            raise ToolError("send one console command per call")
+        with self._lock:
+            proc = self._proc
+        if proc is None or not proc.alive:
+            raise ToolError(
+                "no game launched by this server; stdin is only available for managed "
+                "games - use run_command (RCON)")
+        if not proc.send_stdin(line):
+            raise ToolError("game stdin is closed; use run_command (RCON)")
+        return "sent via stdin (fire-and-forget); read the result with read_console"
 
     def read_console(self, max_lines, cursor):
         with self._lock:

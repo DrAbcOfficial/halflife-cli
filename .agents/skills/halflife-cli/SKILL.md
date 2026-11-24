@@ -123,6 +123,8 @@ via `read_console`. Tool ↔ manual mapping:
 |---|---|
 | `launch_game` | the `subprocess.Popen` + banner-wait launch loop (pass `appid`/`mod` for a non-Sven app; Sven Co-op is the default) |
 | `attach_game` | select an externally started game (e.g. RenderDoc); pass `game_dir`/`appid`/`mod`, validates endpoint and RCON without launching or owning the process |
+| `halflife_info` | manual inspection of the installed schema list, plugin config/RCON paths and endpoint metadata |
+| `send_console` | writing a line to the game's stdin (`GameProcess.send_stdin`); read the result with `read_console` |
 | `run_command` | `rcon_client.py` / `run_command` |
 | `find_cvar` | `cli.find <name>` over RCON |
 | `send_key` / `send_mouse` | `cli.trapkey` / `cli.trapmouse` over RCON (see "Sending keyboard and mouse input") |
@@ -140,8 +142,11 @@ games expose no `read_console` stream and are not stopped on server shutdown.
 Attachment failure preserves the previous session. A running managed game
 must be quit before selecting an external game.
 
-Only fall back to the manual channels below when no `halflife` MCP server is
-connected or the required channel is unavailable.
+With the MCP server, prefer `send_console` + `read_console` (the plugin's
+stdin/stdout bridge) for games it launched; `run_command`/`find_cvar` remain the
+RCON channel when no console stream exists (attached games) or a framed reply
+is required. Only fall back to the manual channels below when no `halflife` MCP
+server is connected or the required channel is unavailable.
 
 ## UserMsg monitor
 
